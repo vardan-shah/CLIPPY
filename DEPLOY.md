@@ -1,6 +1,6 @@
-# Putting PeakCut on a server
+# Putting Clippy on a server
 
-PeakCut runs as three containers on one Linux server: the app, PostgreSQL, and Caddy (which handles HTTPS).
+Clippy runs as three containers on one Linux server: the app, PostgreSQL, and Caddy (which handles HTTPS).
 
 ## What you need
 
@@ -14,9 +14,10 @@ PeakCut runs as three containers on one Linux server: the app, PostgreSQL, and C
 
 1. Copy this folder to the server (or `git clone` it there).
 2. `cp .env.example .env` and fill it in: the AI lines, `PEAKCUT_DOMAIN`, `POSTGRES_PASSWORD`, and
-   `COMPOSE_PROFILES=own-https` if the server is PeakCut's alone. Put key files, if you use files, in `./secrets/`.
+   `COMPOSE_PROFILES=own-https` if the server is Clippy's alone. Put key files, if you use files, in `./secrets/`.
 3. `docker compose up -d --build`
-   The first start downloads the speech model (about 480 MB) and creates the database tables.
+   The first start downloads the multilingual Whisper large-v3-turbo speech model (about 1.6 GB) and creates the
+   database tables.
 4. Open `https://your-domain` and sign up. With Docker, accounts are on (`PEAKCUT_ACCOUNTS=1`), so everyone signs in.
    Every new account is a normal user.
 5. Make yourself an admin, on the server: `docker compose exec app python -m studio.admin grant you@example.com`
@@ -49,7 +50,7 @@ Without SMTP on an HTTPS site, no reset emails can be sent.
 - **One server only**: jobs and live recordings run inside the app process. Do not start a second copy of the app
   against the same data.
 - **YouTube downloads from data centres** are sometimes refused by YouTube ("confirm you're not a bot"). If links
-  fail on the server but work at home, the server's address is the cause. PeakCut then pauses YouTube links for a
+  fail on the server but work at home, the server's address is the cause. Clippy then pauses YouTube links for a
   few minutes and says so; uploads and Twitch or Kick links keep working.
 - **Updates**: `git pull && docker compose up -d --build`. A restart pauses videos in progress (they pick up
   where they stopped) and live recordings (clips already found are finished from the saved stream).
@@ -58,7 +59,7 @@ Without SMTP on an HTTPS site, no reset emails can be sent.
 
 ## A server that already runs other sites
 
-Leave `COMPOSE_PROFILES=own-https` out of `.env`. PeakCut then listens only on `127.0.0.1:8765` and the web
+Leave `COMPOSE_PROFILES=own-https` out of `.env`. Clippy then listens only on `127.0.0.1:8765` and the web
 server that is already there forwards the domain to it: see `deploy/nginx-peakcut.conf`, or
 `deploy/docker-compose.traefik.yml` for Traefik.
 
@@ -72,7 +73,7 @@ With the record proxied (orange cloud):
   pages, clips and the API send `private` or `no-store` and are never cached by Cloudflare.
 - Use SSL/TLS mode Full (strict) with a Cloudflare origin certificate in `secrets/` and
   `PEAKCUT_CADDYFILE=Caddyfile.origin`.
-- Cloudflare's standard plans refuse requests over 100 MB. PeakCut sends big uploads in pieces
+- Cloudflare's standard plans refuse requests over 100 MB. Clippy sends big uploads in pieces
   (`PEAKCUT_UPLOAD_PART_MB`, 40 by default), so large files still work.
 
 ## Speech to text on a graphics card

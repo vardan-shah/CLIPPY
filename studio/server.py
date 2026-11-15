@@ -1,7 +1,7 @@
-"""PeakCut web server. Run with:  python -m studio.server
+"""Clippy web server. Run with:  python -m studio.server
 
 Public pages:  /  /login  /signup          The app:  /app  (signed-in users only)
-Everything under /api, /media and /oauth needs a session, except /api/auth/* and /api/public."""
+Everything under /api, /media and /oauth needs a session, except /api/auth/*, /api/public and signed /pub clips."""
 import hashlib
 import hmac
 import json
@@ -24,9 +24,9 @@ from . import account, load
 from . import (accounts, ai, alerts, auth, config, creators, ctx, db, jobs, live, media, posting,
                profiles, render, safe, transcribe, usage)
 
-app = FastAPI(title="PeakCut", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Clippy", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
-OPEN = ("/api/auth/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
+OPEN = ("/api/auth/", "/api/public", "/pub/", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
 PAGES = {"/": "landing.html", "/login": "auth.html", "/signup": "auth.html", "/reset": "reset.html",
          "/privacy": "legal.html", "/terms": "legal.html", "/acceptable-use": "legal.html"}
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".ts", ".flv"}
@@ -115,7 +115,7 @@ class Gate:
             # must have been asked for by its real address (a number, "localhost", or the address in settings),
             # so another website cannot reach it through a made-up name that points at this machine.
             if not _own_address(req.headers.get("host", "")):
-                return await deny(403, "Open PeakCut by its own address.")
+                return await deny(403, "Open Clippy by its own address.")
             if path == "/" or path == "/reset" or path.startswith("/auth/"):
                 return await deny(303, "", redirect="/app")
             if path.startswith("/api/auth/") and path != "/api/auth/me":
@@ -247,7 +247,7 @@ def _ip(request: Request) -> str:
 
 
 def _own_address(host: str) -> bool:
-    """Is this the address PeakCut is really reached by? A number (127.0.0.1, 192.168.1.20), "localhost", or the
+    """Is this the address Clippy is really reached by? A number (127.0.0.1, 192.168.1.20), "localhost", or the
     host in PEAKCUT_PUBLIC_URL."""
     import ipaddress
     name = host.strip().lower()
@@ -331,9 +331,9 @@ def reset_page():
 
 
 LEGAL = {
-    "privacy": ("Privacy Policy", "How PeakCut collects, uses and protects your data, including Google user data, cookies and your privacy rights."),
-    "terms": ("Terms of Service", "The terms for using PeakCut, the AI clipping tool for streams and videos: accounts, availability and liability."),
-    "acceptable-use": ("Acceptable Use Policy", "What you may and may not do with PeakCut, the AI stream clipping tool."),
+    "privacy": ("Privacy Policy", "How Clippy collects, uses and protects your data, including Google user data, cookies and your privacy rights."),
+    "terms": ("Terms of Service", "The terms for using Clippy, the AI clipping tool for streams and videos: accounts, availability and liability."),
+    "acceptable-use": ("Acceptable Use Policy", "What you may and may not do with Clippy, the AI stream clipping tool."),
 }
 
 
@@ -348,9 +348,9 @@ def legal_page(request: Request):
     contact = config.CONTACT_EMAIL
     who = (f'<a href="mailto:{_h.escape(contact)}">{_h.escape(contact)}</a>' if contact
            else "the contact details on our website")
-    name = _h.escape(config.LEGAL_NAME or "PeakCut")
+    name = _h.escape(config.LEGAL_NAME or "Clippy")
     law = (f"the laws of {_h.escape(config.LEGAL_COUNTRY)}" if config.LEGAL_COUNTRY
-           else "the laws of the country where PeakCut's operator is established")
+           else "the laws of the country where Clippy's operator is established")
     out = (_LEGAL_HTML or (WEB / "legal.html").read_text(encoding="utf-8"))
     for k, v in {"{{CONTACT}}": who, "{{PAGE}}": page, "{{PAGE_PATH}}": page, "{{SITE}}": _h.escape(config.PUBLIC_URL),
                  "{{NAME}}": name, "{{LAW}}": law, "{{TITLE}}": title, "{{DESC}}": desc}.items():
@@ -539,9 +539,13 @@ def google_callback(request: Request, code: str = "", state: str = "", error: st
 @app.get("/api/status")
 def status(request: Request):
     from . import notices
-    return {"user": auth.public(_me(request)), "accounts": config.ACCOUNTS, "links": {"repo": config.REPO_URL, "follow": config.FOLLOW_URL}, "ai": usage.brief(), "unread": notices.unread(),
+    me = _me(request)
+    from . import updates
+    return {"user": auth.public(me), "accounts": config.ACCOUNTS, "links": {"repo": config.REPO_URL, "follow": config.FOLLOW_URL}, "update": updates.latest() if me.is_admin else None, "ai": usage.brief(), "unread": notices.unread(),
             "tour": not accounts.settings()["tour_done"],
-            "youtube": accounts.youtube_ready(), "max_upload_mb": config.MAX_UPLOAD_MB, "upload_part_mb": config.UPLOAD_PART_MB, "max_batch": config.MAX_ACTIVE_JOBS_PER_USER,
+            "youtube": accounts.youtube_ready(),
+            "connect": {p: accounts.can_connect(p) for p in accounts.PLATFORM_NAMES},
+            "max_upload_mb": config.MAX_UPLOAD_MB, "upload_part_mb": config.UPLOAD_PART_MB, "max_batch": config.MAX_ACTIVE_JOBS_PER_USER,
             "styles": {k: v["label"] for k, v in render.STYLES.items()}, "layouts": render.LAYOUTS}
 
 
@@ -566,7 +570,7 @@ _disk: dict = {}
 def _quota():
     """Each account has a fixed amount of disk space. Measured at most once a minute."""
     if load.disk_full():
-        raise HTTPException(503, "PeakCut is out of space for new videos for the moment. Please try again shortly.")
+        raise HTTPException(503, "Clippy is out of space for new videos for the moment. Please try again shortly.")
     uid = ctx.uid()
     got = _disk.get(uid)
     if not got or time.time() - got[0] > 60:
@@ -951,7 +955,7 @@ def clips_zip(ids: str = ""):
     except ValueError as e:
         raise HTTPException(400, str(e))
     from starlette.background import BackgroundTask
-    return FileResponse(f, filename=f"peakcut-clips-{len(pairs)}.zip", media_type="application/zip",
+    return FileResponse(f, filename=f"clippy-clips-{len(pairs)}.zip", media_type="application/zip",
                         headers={"Cache-Control": "private, no-store"}, background=BackgroundTask(lambda: f.unlink(missing_ok=True)))
 
 
@@ -1015,7 +1019,7 @@ def email_preview(request: Request, kind: str = "verify"):
     from . import mailer
     _admin(request)
     if kind == "reset":
-        page = mailer.preview("Reset your password", "Someone asked to reset the password for this PeakCut account. If that was you, choose a new one below.",
+        page = mailer.preview("Reset your password", "Someone asked to reset the password for this Clippy account. If that was you, choose a new one below.",
                               "Choose a new password", config.PUBLIC_URL + "/reset?t=example",
                               "The link works for one hour. If you didn't ask for this, ignore this email and your password stays the same.")
     else:
@@ -1030,9 +1034,9 @@ def test_email(request: Request):
     me_ = _admin(request)
     if not mailer.ready():
         raise HTTPException(400, "No email service is set up yet. Add the PEAKCUT_SMTP settings to .env first.")
-    mailer.send(me_.email, "PeakCut test email", "Your emails are working",
-                "This is a test from your PeakCut server. Account emails like this one will now reach people.",
-                "Open PeakCut", config.PUBLIC_URL + "/app", "You can ignore this message.")
+    mailer.send(me_.email, "Clippy test email", "Your emails are working",
+                "This is a test from your Clippy server. Account emails like this one will now reach people.",
+                "Open Clippy", config.PUBLIC_URL + "/app", "You can ignore this message.")
     return {"sent_to": me_.email}
 
 
@@ -1129,6 +1133,16 @@ def list_creators():
 
 @app.post("/api/creators")
 def new_creator(body: dict = Body(...)):
+    body = dict(body)
+    channel = str(body.get("channel") or "").strip()
+    if channel and profiles.platform_of(live.normalize(channel)) == "YouTube" and profiles._youtube_video(live.normalize(channel)):
+        try:
+            channel = profiles.fetch(channel).get("channel_url") or ""
+        except Exception as e:
+            raise HTTPException(422, "Couldn't detect that video's YouTube channel. Paste the channel link or create the workspace by name.") from e
+        if not channel:
+            raise HTTPException(422, "Couldn't detect that video's YouTube channel. Paste the channel link or create the workspace by name.")
+        body["channel"] = channel
     _channel_ok(body)
     if len(creators.all_creators()) >= 50:
         raise HTTPException(400, "You've reached the limit of 50 creators.")
@@ -1291,43 +1305,66 @@ def remove_account(aid: str):
     return {"ok": True}
 
 
-YT_REDIRECT = config.PUBLIC_URL + "/oauth/youtube/callback"
-_NOTE = ("<!doctype html><meta charset='utf-8'><title>PeakCut</title><link rel='icon' href='/brand/favicon.svg'>"
-         "<body style='font:16px system-ui,sans-serif;padding:48px;color:#211813'><img src='/brand/logo.svg' alt='PeakCut' style='height:34px'>"
-         "<h2 style='margin-top:28px'>{}</h2><p style='color:#6D6159'>{}</p><p><a href='/app' style='color:#A9480A'>Back to PeakCut</a></p></body>")
+def _back(**query):
+    from urllib.parse import urlencode
+    return RedirectResponse("/app/settings/apps?" + urlencode(query), 303)
 
 
-def _esc(s) -> str:
-    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-@app.get("/oauth/youtube/start")
-def youtube_start():
+@app.get("/oauth/{platform}/start")
+def connect_start(platform: str):
+    if platform not in accounts.PLATFORM_NAMES:
+        raise HTTPException(404)
     try:
-        return RedirectResponse(accounts.youtube_auth_url(YT_REDIRECT))
+        return RedirectResponse(accounts.connect_url(platform), 303)
     except ValueError as e:
-        return HTMLResponse(_NOTE.format("YouTube isn't available yet", _esc(e)), status_code=400)
+        return _back(connect_error=str(e))
 
 
-@app.get("/oauth/youtube/callback")
-def youtube_callback(code: str = "", state: str = "", error: str = ""):
+@app.get("/oauth/{platform}/callback")
+def connect_callback(platform: str, code: str = "", state: str = "", error: str = "",
+                     error_description: str = "", error_reason: str = ""):
+    if platform not in accounts.PLATFORM_NAMES:
+        raise HTTPException(404)
+    name = accounts.PLATFORM_NAMES[platform]
     if error or not code:
-        return HTMLResponse(_NOTE.format("YouTube was not connected", "Google reported: " + _esc(error or "no code returned")), status_code=400)
+        why = "you cancelled" if error == "access_denied" or error_reason == "user_denied" else (error_description or error or "no sign-in code came back")
+        return _back(connect_error=f"{name} was not connected: {why[:160]}.")
     try:
-        acc = accounts.youtube_finish(code, state, YT_REDIRECT)
+        _throttle("connect:" + ctx.uid(), 30, 600)
+        acc = accounts.connect_finish(platform, code, state)
     except Exception as e:  # noqa: BLE001
-        return HTMLResponse(_NOTE.format("YouTube was not connected", _esc(safe.friendly(e, 300))), status_code=400)
-    return HTMLResponse(_NOTE.format("YouTube channel connected", _esc(acc["name"]) + " is now in your accounts."))
+        return _back(connect_error=f"{name} was not connected: {safe.friendly(e, 240)}")
+    return _back(connected=platform, name=acc["name"])
 
 
-@app.post("/api/accounts/instagram")
-def add_instagram(body: dict = Body(...)):
+@app.get("/pub/{token}.mp4")
+def public_clip(token: str):
+    """A short-lived signed video address Instagram can fetch while publishing a Reel."""
+    got = accounts.read_clip_link(token)
+    if not got:
+        raise HTTPException(404)
+    uid, job_id, name = got
+    with ctx.as_user(uid):
+        job = jobs.get(job_id) if re.fullmatch(r"[\w\-]{8,60}", job_id) else None
+        f = Path(job["dir"]) / "clips" / name if job else None
+    if not f or not f.is_file():
+        raise HTTPException(404)
+    return FileResponse(f, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/apps")
+def apps_get(request: Request):
+    _admin(request)
+    return accounts.apps_public()
+
+
+@app.put("/api/apps")
+def apps_put(request: Request, body: dict = Body(...)):
+    _admin(request)
     try:
-        auth.throttle("ig:" + ctx.uid(), 10, 600)
-        acc = accounts.instagram_add(str(body.get("token", ""))[:600])
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(400, safe.friendly(e, 300))
-    return {"id": acc["id"], "name": acc["name"]}
+        return accounts.save_app(str(body.get("platform", "")), body.get("client_id"), body.get("client_secret"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.post("/api/posts")
@@ -1364,7 +1401,7 @@ def test_alert():
         auth_problem = str(e)
     if auth_problem:
         raise HTTPException(429, auth_problem)
-    problems = alerts.send("PeakCut: test message. Alerts are working.")
+    problems = alerts.send("Clippy: test message. Alerts are working.")
     if problems:
         raise HTTPException(400, "; ".join(problems))
     return {"ok": True}
@@ -1422,9 +1459,9 @@ def admin_delete_user(request: Request, uid: str, body: dict = Body(...)):
 
 
 def main():
-    print(f"\n  PeakCut is running:  {config.PUBLIC_URL}\n")
+    print(f"\n  Clippy is running:  {config.PUBLIC_URL}\n")
     if not config.ACCOUNTS and (config.HTTPS or config.HOST not in ("127.0.0.1", "localhost", "::1")):
-        print("  Sign-in is off, so anyone who can reach this address can use PeakCut and its AI key.\n"
+        print("  Sign-in is off, so anyone who can reach this address can use Clippy and its AI key.\n"
               "  On a server other people can reach, set PEAKCUT_ACCOUNTS=1 in .env.\n", flush=True)
     if config.env("PEAKCUT_AUTO_RELOAD") == "1":
         # restart by itself whenever the server code changes (pages in web/ never need a restart)

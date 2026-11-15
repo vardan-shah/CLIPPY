@@ -111,7 +111,7 @@ DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "la
             "range_start": None, "range_end": None}
 
 
-LIMITS = {"max_clips": (1, 20), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
+LIMITS = {"max_clips": (1, 20), "min_len": (5, 120), "max_len": (10, 60), "quality": (360, 1080)}
 
 
 def clean_options(options) -> dict:
@@ -370,20 +370,25 @@ def render_one(job, clip, words):
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
-        local = dict(clip, start=clip["start"] - off, end=clip["end"] - off)
-        span = [round(clip["start"], 2), round(clip["end"], 2)]
+        local = dict(clip, start=clip["start"] - off, end=clip["end"] - off,
+                     hook=roman.to_roman(clip.get("hook") or ""))
+        span = [round(clip["start"], 2), round(clip["end"], 2), "language-v2"]
         if clip.get("fixed_for") == span and clip.get("fixed_words") and not any(
                 roman.needs_roman(w.get("w", "")) for w in clip["fixed_words"]):
             raw = clip["fixed_words"]          # already tidied for this exact span: no second AI call
         else:
             raw = [w for w in words if clip["start"] - 1 <= w["s"] <= clip["end"] + 1]
+            lang = job.get("lang") or ""
+            if any(roman.has_hindi(w.get("w", "")) or roman.OTHER_SCRIPT.search(w.get("w", "")) for w in raw):
+                lang = "hi"  # Hindi-labelled-as-ur is kept as Hindi/Hinglish in the clip.
             try:
                 usage.set_context(job.get("creator"), job.get("title") or "")
-                raw = brain.fix_caption_words(raw, job.get("title") or "")
+                raw = brain.english_captions(raw, lang, job.get("title") or "",
+                                              youtube_english=lambda: _english_part(job, clip))
                 clip.update(fixed_words=raw, fixed_for=span)
             except Exception:  # noqa: BLE001 - captions still render with the words as heard
                 pass
-        near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in raw]
+        near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
         clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None)
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}
@@ -401,6 +406,22 @@ def render_one(job, clip, words):
         clip.update(status="error", error=safe.friendly(e, 400))
         creators.log(job["creator"], f"Clip failed: {safe.friendly(e, 200)}")
     save(job)
+
+
+def _english_part(job, clip):
+    """YouTube's English captions for just this clip, if the video was spoken in another language."""
+    if (job.get("source") or {}).get("type") != "url":
+        return None
+    f = Path(job["dir"]) / "words_en.json"
+    if f.is_file():
+        en = json.loads(f.read_text(encoding="utf-8"))
+    else:
+        try:
+            en = media.youtube_english_words(job["source"]["url"]) or []
+        except Exception:  # noqa: BLE001 - YouTube may not have an English caption track
+            en = []
+        f.write_text(json.dumps(en), encoding="utf-8")
+    return [w for w in en if clip["start"] - 0.5 <= w["s"] <= clip["end"] + 0.5]
 
 
 LONG_VIDEO = 40 * 60   # above this, fetch only the pieces that become clips
@@ -522,12 +543,14 @@ def _run_job(job):
     def make(clip, words_now):
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
-        if clip["status"] != "error" and yt and yt[1].lower().startswith("en"):
-            # The clip was found with YouTube's transcript. What is shown on screen comes from our own model,
-            # run on just this clip: full punctuation, nothing blanked out, timings to the word.
+        source_lang = str(yt[1] or "").lower().split("-")[0] if yt else ""
+        if clip["status"] != "error" and yt and (source_lang == "en" or source_lang == "ur"):
+            # Use our own word-timed transcript for English captions and recheck Hindi-labelled-as-ur as Hindi.
             a0, b0 = max(lo, int((clip["start"] - 1.5) * 16000)), min(hi, int((clip["end"] + 1.5) * 16000))
             try:
-                tw = [dict(w, s=round(w["s"] + a0 / 16000, 2), e=round(w["e"] + a0 / 16000, 2)) for w in transcribe.transcribe(audio[a0:b0])]
+                forced = "hi" if source_lang == "ur" else None
+                tw = [dict(w, s=round(w["s"] + a0 / 16000, 2), e=round(w["e"] + a0 / 16000, 2))
+                      for w in transcribe.transcribe(audio[a0:b0], language=forced)]
             except Exception:  # noqa: BLE001 - the clip is still made, with YouTube's words
                 tw = []
             if len(tw) >= 3:
@@ -552,6 +575,8 @@ def _run_job(job):
         if yt and not _covers(yt[0], lo / 16000, hi / 16000):
             yt = None
         job["transcript_from"] = "youtube" if yt else "own"
+        source_lang = str(yt[1] or "").lower().split("-")[0] if yt else ""
+        job["lang"] = "hi" if source_lang == "ur" else (source_lang or "")
     if resuming:
         try:
             words = json.loads((d / "words.json").read_text(encoding="utf-8"))
@@ -636,18 +661,35 @@ def _run_job(job):
     fetch.shutdown(wait=False)
     del audio
     clips = job["clips"]
+    ready = [c for c in clips if c.get("status") == "done"]
+    failed = [c for c in clips if c.get("status") == "error"]
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
-    stage = "Done" if clips else "Done, but nothing clip-worthy was found"
-    _set(job, status="done", stage=stage, progress=1.0, took=round(time.time() - t0))
+    if ready:
+        stage = "Done" if not failed else f"{len(ready)} clips ready; {len(failed)} could not be rendered"
+        status, job_error = "done", None
+    elif failed:
+        stage = "Clips could not be rendered"
+        status, job_error = "error", failed[0].get("error") or "Every clip failed while rendering."
+    else:
+        stage = "Done, but nothing clip-worthy was found"
+        status, job_error = "done", None
+    _set(job, status=status, stage=stage, error=job_error, progress=1.0, took=round(time.time() - t0))
     try:
         from . import notices
         name = job.get("title") or job["source"].get("name") or "your video"
-        notices.add(job.get("user"), "clips", f"{len(clips)} clip{'s' if len(clips) != 1 else ''} ready" if clips else "Nothing clip-worthy found",
-                    name, f"/app/creators/{job['creator']}" if job.get("creator") else "/app/videos")
+        link = f"/app/creators/{job['creator']}" if job.get("creator") else "/app/videos"
+        if ready:
+            body = name if not failed else f"{name} · {len(failed)} clip{'s' if len(failed) != 1 else ''} could not be rendered."
+            notices.add(job.get("user"), "clips", f"{len(ready)} clip{'s' if len(ready) != 1 else ''} ready", body, link)
+        elif failed:
+            notices.add(job.get("user"), "fail", "Clips could not be rendered",
+                        f"{name} · {failed[0].get('error') or 'Open the video to see the error.'}", link)
+        else:
+            notices.add(job.get("user"), "clips", "No clip-worthy moments found", name, link)
     except Exception:  # noqa: BLE001
         pass
-    creators.log(job["creator"], f"Video finished with {len(clips)} clips in {round(time.time() - t0)}s: {job['title']}")
+    creators.log(job["creator"], f"Video finished with {len(ready)} clips ready and {len(failed)} failed in {round(time.time() - t0)}s: {job['title']}")
 
 
 def _worker(quick_only=False):

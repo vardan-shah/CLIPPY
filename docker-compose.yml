@@ -1,4 +1,4 @@
-# PeakCut on one server: the app, PostgreSQL, and Caddy for HTTPS.
+# Clippy on one server: the app, PostgreSQL, and Caddy for HTTPS.
 # Copy .env.example to .env, fill it in, then:  docker compose up -d --build
 # A server of its own: also set COMPOSE_PROFILES=own-https in .env. A shared server: see deploy/nginx-peakcut.conf.
 services:
@@ -36,7 +36,7 @@ services:
     # Reachable from this server only. On a server that already has a web server, point that one at this port
     # (see deploy/nginx-peakcut.conf). With the "own-https" profile, Caddy below is the web server instead.
     ports: ["127.0.0.1:${PEAKCUT_BIND_PORT:-8765}:8765"]
-    # On a server shared with other apps, these keep PeakCut inside its own share (all unlimited by default):
+    # On a server shared with other apps, these keep Clippy inside its own share (all unlimited by default):
     # a memory ceiling with no swap, a processor ceiling, a lower turn at the processor when the server is busy,
     # and "stop this one first" if the whole server ever runs out of memory.
     mem_limit: ${PEAKCUT_MEM_LIMIT:-0}
@@ -45,7 +45,7 @@ services:
     cpu_shares: ${PEAKCUT_CPU_SHARES:-1024}
     oom_score_adj: ${PEAKCUT_OOM_SCORE_ADJ:-0}
 
-  # Only on a server PeakCut has to itself: add COMPOSE_PROFILES=own-https to .env and Caddy handles HTTPS.
+  # Only on a server Clippy has to itself: add COMPOSE_PROFILES=own-https to .env and Caddy handles HTTPS.
   caddy:
     profiles: ["own-https"]
     image: caddy:2

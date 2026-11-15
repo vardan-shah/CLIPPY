@@ -1,4 +1,4 @@
-/* PeakCut ASCII field: a soft colour cloud with loose clusters of small characters that fade in and out as it drifts.
+/* Clippy ASCII field: a soft colour cloud with loose clusters of small characters that fade in and out as it drifts.
    Smooth: every character keeps its own glyph and only its opacity moves, and the cloud is drawn small and scaled up
    (a cheap, natural blur), so it can run at full frame rate.
    Usage: PeakAscii(canvasElement, {strength: 1}). Pauses off screen and when the tab is hidden; still for reduced motion. */

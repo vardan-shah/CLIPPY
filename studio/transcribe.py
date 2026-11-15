@@ -1,4 +1,4 @@
-"""Speech to text with word timestamps, using Parakeet 0.6b through sherpa-onnx.
+"""Speech to text with word timestamps, using a local multilingual model.
 
 It runs in one of two places. On this machine's processors (the default), or, when PEAKCUT_ASR_URL is set, on a
 separate machine with a graphics card (studio/asr_worker.py), which does the same work many times faster. If that
@@ -7,6 +7,7 @@ import os
 import queue
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -20,7 +21,8 @@ _lock = threading.Lock()
 _CPUS = os.cpu_count() or 4
 PROVIDER = os.environ.get("PEAKCUT_ASR_PROVIDER", "cpu").strip().lower() or "cpu"      # "cuda" on a graphics card
 THREADS = int(os.environ.get("PEAKCUT_ASR_THREADS") or (4 if _CPUS >= 8 else max(2, _CPUS - 2)))
-COPIES = int(os.environ.get("PEAKCUT_ASR_COPIES") or (1 if PROVIDER != "cpu" else max(1, _CPUS // THREADS) if _CPUS >= 8 else 1))
+COPIES = int(os.environ.get("PEAKCUT_ASR_COPIES") or (1 if PROVIDER != "cpu" or config.ASR_MODEL_TYPE != "transducer"
+                                                        else max(1, _CPUS // THREADS) if _CPUS >= 8 else 1))
 _free: "queue.LifoQueue" = queue.LifoQueue()
 _made = 0
 
@@ -36,7 +38,20 @@ _remote_down_until = 0.0
 
 
 def model_ready() -> bool:
-    return (config.ASR_MODEL_DIR / "tokens.txt").exists()
+    if config.ASR_MODEL_TYPE == "faster_whisper":
+        return all((config.ASR_MODEL_DIR / name).is_file() for name in ("model.bin", "config.json", "tokenizer.json"))
+    try:
+        if config.ASR_MODEL_TYPE == "whisper":
+            files = _whisper_files(config.ASR_MODEL_DIR)
+            if not Path(files["tokens"]).is_file():
+                return False
+        else:
+            if not (config.ASR_MODEL_DIR / "tokens.txt").is_file():
+                return False
+            _model_files(config.ASR_MODEL_DIR)
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def _model_files(d) -> dict:
@@ -49,9 +64,37 @@ def _model_files(d) -> dict:
     raise FileNotFoundError(f"No speech model files in {d}")
 
 
+def _whisper_files(d) -> dict:
+    """Find the compact Whisper files; release folders name them after the model size."""
+    size = config.ASR_MODEL_NAME.removeprefix("sherpa-onnx-whisper-")
+    for suffix in ("int8", "", "fp16"):
+        tail = f".{suffix}" if suffix else ""
+        names = {part: d / f"{size}-{part}{tail}.onnx" for part in ("encoder", "decoder")}
+        if all(f.is_file() for f in names.values()):
+            return {**{part: str(f) for part, f in names.items()}, "tokens": str(d / f"{size}-tokens.txt")}
+    raise FileNotFoundError(f"No Whisper model files in {d}")
+
+
 def _new():
-    import sherpa_onnx
     d = config.ASR_MODEL_DIR
+    if config.ASR_MODEL_TYPE == "faster_whisper":
+        from faster_whisper import WhisperModel
+        device = "cpu" if PROVIDER == "cpu" else PROVIDER
+        compute_type = os.environ.get("PEAKCUT_ASR_COMPUTE_TYPE", "int8" if device == "cpu" else "float16")
+        return WhisperModel(str(d), device=device, compute_type=compute_type, cpu_threads=THREADS, num_workers=1)
+    import sherpa_onnx
+    if config.ASR_MODEL_TYPE == "whisper":
+        files = _whisper_files(d)
+        return sherpa_onnx.OfflineRecognizer.from_whisper(
+            **files,
+            language="",                 # let Whisper detect English, Hindi, or another spoken language
+            task="transcribe",            # keep the words in their spoken language
+            num_threads=THREADS,
+            decoding_method="greedy_search",
+            provider=PROVIDER,
+            enable_token_timestamps=True,
+            enable_segment_timestamps=True,
+        )
     return sherpa_onnx.OfflineRecognizer.from_transducer(
         **_model_files(d),
         tokens=str(d / "tokens.txt"),
@@ -177,6 +220,37 @@ def decode_pieces(pieces: list, rec=None) -> list:
     return [(list(st.result.tokens), [float(t) for t in st.result.timestamps]) for st in streams]
 
 
+def _decode_faster(pieces: list, rec, language=None) -> list:
+    """Decode audio chunks with automatic language detection and word-level timestamps.
+
+    Whisper can misclassify spoken Hindi and write it in Arabic script. Re-decode those chunks as Hindi so the words
+    stay Hindi/Hinglish for Indian creators instead of carrying the mistaken language label into clips.
+    """
+    out = []
+    for audio in pieces:
+        segments, info = rec.transcribe(audio, language=language, task="transcribe", beam_size=5,
+                                        word_timestamps=True, multilingual=True, vad_filter=False,
+                                        condition_on_previous_text=False)
+        segments = list(segments)
+        if language is None and getattr(info, "language", "") == "ur":
+            try:
+                segments, _info = rec.transcribe(audio, language="hi", task="transcribe", beam_size=5,
+                                                 word_timestamps=True, multilingual=True, vad_filter=False,
+                                                 condition_on_previous_text=False)
+                segments = list(segments)
+            except Exception:  # noqa: BLE001 - keep the automatic transcript if Hindi re-decoding is unavailable
+                pass
+        words = []
+        for segment in segments:
+            for word in segment.words or []:
+                text = (word.word or "").strip()
+                start, end = float(word.start), float(word.end)
+                if text and end > start:
+                    words.append({"w": text, "s": round(start, 2), "e": round(end, 2)})
+        out.append(words)
+    return out
+
+
 def _remote_ok() -> bool:
     return bool(REMOTE) and time.time() >= _remote_down_until
 
@@ -195,7 +269,7 @@ def _decode_remote(pieces: list) -> list:
     return [(p["tokens"], p["timestamps"]) for p in got]
 
 
-def transcribe(audio: np.ndarray, on_progress=None) -> list:
+def transcribe(audio: np.ndarray, on_progress=None, language=None) -> list:
     """Returns [{'w': word, 's': start_sec, 'e': end_sec}, ...] for the whole audio.
     Speech is cut at quiet moments into 12-24 s pieces; silent pieces are skipped."""
     global _remote_down_until
@@ -206,7 +280,7 @@ def transcribe(audio: np.ndarray, on_progress=None) -> list:
         if len(seg) < 4800 or float(np.sqrt((seg ** 2).mean())) < 0.003:
             continue  # silence: skip, saves time and avoids made-up words
         todo.append((a, b, seg))
-    remote = _remote_ok()
+    remote = _remote_ok() and config.ASR_MODEL_TYPE not in ("whisper", "faster_whisper")
     size = max(1, REMOTE_BATCH if remote else BATCH)
     groups = [todo[i:i + size] for i in range(0, len(todo), size)]
     done = [0]
@@ -214,6 +288,21 @@ def transcribe(audio: np.ndarray, on_progress=None) -> list:
     def decode(group):
         global _remote_down_until
         segs = [seg for _, _, seg in group]
+        if config.ASR_MODEL_TYPE == "faster_whisper":
+            rec = _take()
+            try:
+                out = _decode_faster(segs, rec, language=language)
+                for (a, _b, _audio), chunk_words in zip(group, out):
+                    offset = a / 16000.0
+                    for word in chunk_words:
+                        word["s"] = round(word["s"] + offset, 2)
+                        word["e"] = round(word["e"] + offset, 2)
+            finally:
+                _free.put(rec)
+            done[0] += 1
+            if on_progress:
+                on_progress(done[0] / len(groups))
+            return out
         got = None
         while got is None:
             # whichever is free first: a place on the card's machine, or a copy of the model on this one

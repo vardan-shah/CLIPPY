@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PeakCut</title>
+<title>Clippy</title>
 <link rel="icon" type="image/svg+xml" href="/brand/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -74,6 +74,12 @@ main{background:var(--bg);margin:8px 8px 8px 0;border-radius:var(--r-lg);height:
 .topbar{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 28px;min-height:54px;border-bottom:1px solid transparent;transition:border-color .2s ease}
 .topbar.stuck{border-color:var(--line)}
 #vbanner:empty{display:none}
+.upd{display:grid;gap:14px}
+.upd ul{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px;color:var(--text);max-height:180px;overflow:auto}
+.upd ul small{color:var(--dim)}
+.upd .cmd{display:flex;gap:8px;align-items:center}
+.upd .cmd code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:12px;background:var(--muted);border-radius:8px;padding:9px 11px}
+.upd h3{font-size:13px;font-weight:600;color:var(--brand-ink);margin:0}
 .vb{display:flex;align-items:center;gap:12px;margin:12px 28px 0;padding:12px 12px 12px 16px;border-radius:12px;background:#FFF4E6;color:#7A3E0C;font-size:14px;animation:rise .3s ease both}
 .vb svg{width:18px;height:18px;flex:none;color:var(--brand-deep)}
 .vb span{flex:1;min-width:0}
@@ -456,6 +462,15 @@ img.av{object-fit:cover}
 .applogo svg{width:22px;height:22px}
 .apptx{flex:1;min-width:0}.apptx>b{display:block;font-size:15px;color:var(--brand-ink)}.apptx>span{font-size:13px;color:var(--dim)}
 .appact{flex:none}
+.appcard{flex-wrap:wrap}
+.appsetup{flex-basis:100%;margin-top:4px;padding:14px 16px;border-radius:10px;background:var(--muted);display:grid;gap:12px}
+.appsetup ol{margin:0;padding-left:18px;font-size:13px;color:var(--text);display:grid;gap:4px}
+.appsetup a{color:var(--brand-deep);font-weight:600}
+.appsetup a:hover{color:var(--brand-ink)}
+.appsetup .copyrow{display:flex;gap:8px;align-items:center}
+.appsetup .copyrow code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:12px;background:#fff;border:1px solid var(--line-2);border-radius:8px;padding:8px 10px}
+.appsetup .warnline{font-size:12px;color:var(--brand-deep)}
+.appact{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .applist{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .applist div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .applist .btn{margin-left:auto}
@@ -790,7 +805,7 @@ dialog[open]{animation:fadein .16s ease}
 <body>
 <div class="app" id="app">
   <aside class="side" aria-label="Sidebar">
-    <div class="side-head"><img class="logo" src="/brand/logo-light.svg" alt="PeakCut"><img class="mark" src="/brand/favicon.svg" alt="PeakCut">
+    <div class="side-head"><img class="logo" src="/brand/logo-light.svg" alt="Clippy"><img class="mark" src="/brand/favicon.svg" alt="Clippy">
       <button class="icon-btn collapse" data-act="collapse" id="collapseBtn" aria-label="Collapse sidebar"></button></div>
     <nav class="nav" id="nav" aria-label="Main"></nav>
     <div class="side-foot" id="foot"></div>
@@ -881,6 +896,7 @@ const when = t => new Date(t * 1000).toLocaleString([], {month:"short", day:"num
 const opts = (map, val) => Object.entries(map).map(([k, v]) => `<option value="${esc(k)}"${String(k) === String(val) ? " selected" : ""}>${esc(v)}</option>`).join("");
 
 async function api(path, opt) {
+  if (location.protocol === "file:") throw new Error("Clippy needs its local server. In Terminal, run `python3 -m studio.server` from the Clipper folder, then open http://127.0.0.1:8765.");
   const r = await fetch(path, opt);
   if (r.status === 401) { location.href = "/login"; throw new Error("Please sign in."); }
   if (!r.ok) { let d = r.statusText; try { d = (await r.json()).detail || d; } catch {} throw new Error(typeof d === "string" ? d : "Something went wrong"); }
@@ -911,15 +927,15 @@ function startTour() {
   if (S.view !== "overview") go("overview");
   // sel: what the step points at.  side: it lives in the sidebar (opened for the step on phones).  dock: where the card sits on phones.
   const steps = [
-    {t: "Welcome to PeakCut", x: "Long videos and live streams go in, captioned vertical clips come out. Here is a quick look around.",
+    {t: "Welcome to Clippy", x: "Long videos and live streams go in, captioned vertical clips come out. Here is a quick look around.",
      chips: [["link", "Paste a link"], ["scissors", "Get clips", 1], ["radio", "Live streams"], ["send", "Post them"]]},
-    {t: "Start with any video", x: "Paste a YouTube, Twitch or Kick link here, or upload a file. PeakCut finds the best moments and makes each one a short with captions.",
+    {t: "Start with any video", x: "Paste a YouTube, Twitch or Kick link here, or upload a file. Clippy finds the best moments and makes each one a short with captions.",
      sel: "#addform", dock: "bottom", chips: [["link", "YouTube"], ["link", "Twitch"], ["link", "Kick"], ["up", "Upload", 1]]},
     {t: "Your day at a glance", x: "Home shows what is recording, how many clips were made and posted today, and what is waiting to go out.",
      sel: "#ov .tiles", dock: "bottom", chips: [["radio", "Recording"], ["scissors", "Clips today", 1], ["send", "Posted"], ["clock", "Waiting"]]},
     {t: "Every video in one place", x: "All videos lists everything you have processed. Open a video to see its clips, trim them, change the captions or download them.",
      sel: '#nav [data-v="library"]', side: 1, dock: "bottom", chips: [["film", "All videos", 1], ["play", "Preview"], ["sliders", "Edit"], ["down", "Download"]]},
-    {t: "Add the creators you clip", x: "Give each creator a workspace with their channels. PeakCut can record them when they go live and clip the highlights as they happen.",
+    {t: "Add the creators you clip", x: "Give each creator a workspace with their channels. Clippy can record them when they go live and clip the highlights as they happen.",
      sel: '#nav [data-act="newcreator"]', side: 1, dock: "bottom", chips: [["plusc", "New creator", 1], ["radio", "Record live"], ["bolt", "Clip highlights"]]},
     {t: "The AI picks the moments", x: "This shows which AI this server uses and how much it has worked today. Open it to see what the AI was used for.",
      sel: "#foot .ai-card", side: 1, dock: "top", chips: [["bolt", "AI", 1], ["chart", "See usage"]]},
@@ -1036,12 +1052,14 @@ const jobOf = id => S.jobs.find(j => j.id === id);
 /* ============================================================ shell */
 function aiCard() {
   const k = S.status.ai; if (!k) return "";
+  const local = String(k.provider || "").startsWith("Ollama");
+  const hint = k.ready ? (k.model || "") : local ? (k.message || "Pull a local model such as qwen2.5:7b to enable AI clip selection.") : "Clips are picked by loudness until an AI service is ready.";
   return `<div class="card ai-home"><h2>AI</h2>
-    <div class="ai-big">${k.ready ? esc(k.provider || "Ready") : "Not set up"}</div>
-    <p class="ai-sub">${k.ready ? esc(k.model || "") : "Clips are picked by loudness until an AI key is added."}</p>
+    <div class="ai-big">${k.ready ? esc(k.provider || "Ready") : local ? "Ollama not ready" : "Not set up"}</div>
+    <p class="ai-sub">${esc(hint)}</p>
     <div class="ai-stats"><div><b>${(k.today_calls || 0).toLocaleString()}</b><span>AI calls today</span></div>
       <div><b>${fmtK(k.today_tokens)}</b><span>Tokens today</span></div></div>
-    <div class="row">${!k.ready && S.status.user?.is_admin ? `<button class="btn primary" data-act="go" data-v="settings" data-tab="ai">${ic("plus")}Add AI key</button>` : ""}<button class="btn" data-act="go" data-v="usage">View usage ${ic("arrowr")}</button></div></div>`;
+    <div class="row">${!k.ready && S.status.user?.is_admin ? `<button class="btn primary" data-act="go" data-v="settings" data-tab="ai">${ic("plus")}${local ? "Check local AI" : "Set up AI"}</button>` : ""}<button class="btn" data-act="go" data-v="usage">View usage ${ic("arrowr")}</button></div></div>`;
 }
 const PLAT = {
   youtube: {name: "YouTube", bg: "#FF0000", fg: "#fff", hint: "https://www.youtube.com/@name",
@@ -1075,7 +1093,7 @@ function drawStream() {
     pl.dataset.src = src;
     const ipHost = /^[\d.]+$|^\[/.test(location.hostname);
     pl.innerHTML = k === "twitch" && ipHost
-      ? `<div class="noembed">${platLogo(k)}<b>Twitch only plays inside sites with a web address</b><span>It will play here once PeakCut is on its domain, or open PeakCut at localhost instead of ${esc(location.hostname)}.</span><a class="btn sm" href="${esc(p.channel)}" target="_blank" rel="noopener">Watch on Twitch ${ic("upright")}</a></div>`
+      ? `<div class="noembed">${platLogo(k)}<b>Twitch only plays inside sites with a web address</b><span>It will play here once Clippy is on its domain, or open Clippy at localhost instead of ${esc(location.hostname)}.</span><a class="btn sm" href="${esc(p.channel)}" target="_blank" rel="noopener">Watch on Twitch ${ic("upright")}</a></div>`
       : src ? `<iframe src="${src}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="${PLAT[k].name} live stream"></iframe>` : "";
   }
   const stats = [p.viewers != null ? [fmtK(p.viewers), "watching"] : null, p.started ? [since(p.started), "live for"] : null,
@@ -1087,7 +1105,7 @@ function drawStream() {
     ${stats.length ? `<div class="sstats">${stats.map(([v, l]) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>` : ""}
     <div class="cta">${rec
       ? `<button class="btn danger" data-act="stoplive" data-j="${esc(rec)}">${ic("stop")}Stop recording</button><small>Recording now. Clips appear below as they're made.</small>`
-      : `<button class="btn primary" data-act="golive" data-url="${esc(p.channel)}"><span class="rdot"></span>Record this stream</button><small>PeakCut watches it and clips the best moments as they happen.</small>`}</div>`);
+      : `<button class="btn primary" data-act="golive" data-url="${esc(p.channel)}"><span class="rdot"></span>Record this stream</button><small>Clippy watches it and clips the best moments as they happen.</small>`}</div>`);
 }
 function liveOn(c) { return Object.entries(c.profiles || {}).filter(([k, p]) => p.live && c.channels?.[k] === p.channel).sort(([, p]) => p.channel === c.channel ? -1 : 1); }
 function statusBadge(c) {
@@ -1192,6 +1210,20 @@ async function openFeedback(kind = "bug", context = "") {
   if (context) { try { await navigator.clipboard.writeText(context); toast("The problem is copied. Paste it in your message.", "ok"); } catch {} }
   window.open(url, "_blank", "noopener");
 }
+function updateHow() {
+  const up = S.status?.update, d = $("#formdlg"); if (!up || d.open) return;
+  const ai = "Update Clippy from its GitHub repo. Read AGENTS.md, keep my .env and data folder, install new requirements, run tests/run.py, then restart Clippy.";
+  const cmd = (label, text) => `<h3>${label}</h3><div class="cmd"><code>${esc(text)}</code><button class="btn sm" type="button" data-act="copytext" data-t="${esc(text)}">${ic("copy")}Copy</button></div>`;
+  d.innerHTML = `<form method="dialog" class="dlg upd"><h2>A new version of Clippy is available</h2>
+    <p class="help">This copy is on <b>${esc(up.current)}</b>. ${up.behind} update${up.behind === 1 ? " has" : "s have"} been added. Your settings, keys and clips stay in place.</p>
+    ${up.notes.length ? `<ul>${up.notes.map(n => `<li>${esc(n.title)} <small>${esc(n.date)}</small></li>`).join("")}</ul>` : ""}
+    ${cmd("Ask your coding assistant", ai)}
+    ${cmd("Or run this in the Clippy folder", "git pull && .venv/bin/pip install -r requirements.txt && .venv/bin/python tests/run.py")}
+    <p class="sub">Stop Clippy and start it again after updating. With Docker, run <code>git pull && docker compose up -d --build</code>. <a class="lnk" href="${esc(up.url)}" target="_blank" rel="noopener">See the changes on GitHub</a></p>
+    <div class="dlg-foot"><button class="btn" value="later">Remind me next update</button><button class="btn primary" value="ok" autofocus>Got it</button></div></form>`;
+  d.onclose = () => { if (d.returnValue === "later") { try { localStorage.setItem("clippy_update_seen", up.latest); } catch {} drawShell(); } };
+  d.returnValue = "ok"; d.showModal();
+}
 function greeting() { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; }
 let lastInd = null;
 addEventListener("resize", () => { lastInd = null; const i = $("#utabs .ind"); if (i) i.remove(); moveInd(); });   // where the orange pill was, so it can slide from there to the new tab
@@ -1219,8 +1251,8 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
     (S.status.user?.role === "admin" && S.status.accounts !== false ? `<h4><span>Owner</span></h4><a class="nav-item" href="/admin" title="Admin dashboard" style="text-decoration:none">${ic("shield")}<span class="label">Admin dashboard</span></a>` : ""));
   const st = S.status;
   const k = S.status.ai;
-  put($("#foot"), (k ? `<button class="ai-card ${S.view === "usage" ? "on" : ""}" data-act="go" data-v="usage" title="${k.ready ? `AI: ${esc(k.provider || "ready")}, ${k.today_calls || 0} calls today` : "The AI is not set up"}">
-      <span class="ai-ic">${ic("bolt")}</span><span class="ai-tx"><small>AI</small><b>${k.ready ? esc(k.provider || "Ready") : "Not set up"}</b></span>${k.ready ? `<span class="ai-n">${(k.today_calls || 0).toLocaleString()} today</span>` : ""}</button>` : "") +
+  put($("#foot"), (k ? `<button class="ai-card ${S.view === "usage" ? "on" : ""}" data-act="go" data-v="usage" title="${k.ready ? `AI: ${esc(k.provider || "ready")}, ${k.today_calls || 0} calls today` : esc(k.message || "The AI is not ready")}">
+      <span class="ai-ic">${ic("bolt")}</span><span class="ai-tx"><small>AI</small><b>${k.ready ? esc(k.provider || "Ready") : String(k.provider || "").startsWith("Ollama") ? "Ollama not ready" : "Not set up"}</b></span>${k.ready ? `<span class="ai-n">${(k.today_calls || 0).toLocaleString()} today</span>` : ""}</button>` : "") +
     (S.status.user ? `<div class="me"><button class="me-btn" data-act="acctmenu" aria-haspopup="menu" aria-expanded="false">${meAvatar(S.status.user)}
       <span class="who">${S.status.accounts === false ? `<b>Settings</b><span>AI key, connected apps</span>` : `<b>${esc(S.status.user.name)}</b><span>${esc(S.status.user.email)}</span>`}</span></button>
       <button class="icon-btn bell" data-act="bell" title="Notifications" aria-label="Notifications${S.status.unread ? `, ${S.status.unread} new` : ""}" aria-haspopup="dialog">${ic("bell")}${S.status.unread ? `<span class="dotn">${S.status.unread > 9 ? "9+" : S.status.unread}</span>` : ""}</button></div>` : ""));
@@ -1244,13 +1276,17 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
   }
   if (S.view === "overview" || S.view === "library") {
     const L = S.status.links || {};
-    act = (L.repo ? `<a class="btn" href="${esc(L.repo)}" target="_blank" rel="noopener" title="Star PeakCut on GitHub">${ic("github")}<span>Star<span class="long"> on GitHub</span></span></a>` : "")
-        + (L.follow ? `<a class="btn primary" href="${esc(L.follow)}" target="_blank" rel="noopener" title="Follow the maker of PeakCut on Instagram">${ic("instagram")}Follow me</a>` : "");
+    act = (L.repo ? `<a class="btn" href="${esc(L.repo)}" target="_blank" rel="noopener" title="Star Clippy on GitHub">${ic("github")}<span>Star<span class="long"> on GitHub</span></span></a>` : "")
+        + (L.follow ? `<a class="btn primary" href="${esc(L.follow)}" target="_blank" rel="noopener" title="Follow the maker of Clippy on Instagram">${ic("instagram")}Follow me</a>` : "");
   }
   const me = S.status.user;
   const kk = S.status.ai;
-  put($("#vbanner"), me && me.verified === false ? `<div class="vb" role="status">${ic("warn")}<span>Confirm your email to start clipping. We sent a link to <b>${esc(me.email)}</b>.</span><button class="btn sm" data-act="resendverify">Send a new link</button></div>`
-    : kk && kk.ready === false && S.view !== "usage" ? `<div class="vb" role="status">${ic("bolt")}<span>${me?.is_admin ? "Add your AI key to let the AI pick clips and write titles. Until then, clips are picked by loudness." : "The AI isn't set up on this server yet, so clips are picked by loudness."}</span>${me?.is_admin && S.view !== "settings" ? `<button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">${ic("plus")}Add AI key</button>` : ""}</div>` : "");
+  const up = S.status.update; let upSeen = "";
+  try { upSeen = localStorage.getItem("clippy_update_seen") || ""; } catch {}
+  const updateBanner = up && up.latest !== upSeen ? `<div class="vb" role="status">${ic("up")}<span>A new Clippy version is available: <b>${up.behind} update${up.behind === 1 ? "" : "s"}</b> since this copy.</span><button class="btn sm primary" data-act="updhow">How to update</button><button class="btn sm ghost" data-act="updlater">Later</button></div>` : "";
+  const verifyBanner = me && me.verified === false ? `<div class="vb" role="status">${ic("warn")}<span>Confirm your email to start clipping. We sent a link to <b>${esc(me.email)}</b>.</span><button class="btn sm" data-act="resendverify">Send a new link</button></div>` : "";
+  const aiBanner = kk && kk.ready === false && S.view !== "usage" ? `<div class="vb" role="status">${ic("bolt")}<span>${esc(kk.message || (me?.is_admin ? "Set up a local model or choose an optional cloud AI service. Until then, clips are picked by loudness." : "No AI model is ready on this server yet, so clips are picked by loudness."))}</span>${me?.is_admin && S.view !== "settings" ? `<button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">${ic("plus")}Check AI setup</button>` : ""}</div>` : "";
+  put($("#vbanner"), location.protocol === "file:" ? `<div class="vb" role="status">${ic("warn")}<span>This page was opened as a file, so its buttons cannot reach Clippy. Start the server with <code>python3 -m studio.server</code> from the Clippy folder, then open <a href="http://127.0.0.1:8765/app">http://127.0.0.1:8765/app</a>.</span></div>` : updateBanner || verifyBanner || aiBanner);
   put($("#tpic"), pic); $("#tpic").classList.toggle("live", !!(c && (c.live_job || liveOn(c).length)));
   put($("#utabs"), tabs); moveInd(); $(".topbar").classList.toggle("tabbed", !!tabs);
   put($("#title"), `<span>${esc(title)}</span>`); put($("#subtitle"), subHtml ?? esc(sub)); put($("#actions"), act);
@@ -1271,6 +1307,7 @@ function fromPath(path) {
   return [k || "overview", "clips"];
 }
 function remember(v, tab, how = "push") {
+  if (location.protocol === "file:") return;
   const url = pathFor(v, tab);
   if (location.pathname !== url) history[how === "replace" ? "replaceState" : "pushState"]({v, tab}, "", url);
 }
@@ -1280,7 +1317,7 @@ function go(v, tab, fromHistory) {
   S.view = v; if (tab) S.ctab = tab; else if (!v.startsWith("c:")) S.ctab = "clips";
   if (v === "settings") S.stab = setTabs().some(x => x[0] === tab) ? tab : setTabs()[0][0];
   if (!fromHistory) remember(v, v.startsWith("c:") ? S.ctab : v === "settings" ? S.stab : null);
-  localStorage.setItem("view", v);
+  try { localStorage.setItem("view", v); } catch {}
   $("#app").classList.remove("open");
   const view = $("#view");
   if (window._gaStop) { window._gaStop(); window._gaStop = null; }
@@ -1326,7 +1363,7 @@ function drawAdd(variant) {
       <div class="ob wide"><div class="ot">Clips</div><div class="nsteps">
         ${stepper("o_max", "How many", c?.max_clips ?? 6, 1, 20, 1, "")}
         ${stepper("o_min", "Shortest", c?.min_len ?? 15, 5, 120, 5, "s")}
-        ${stepper("o_maxlen", "Longest", c?.max_len ?? 60, 10, 180, 5, "s")}
+        ${stepper("o_maxlen", "Longest", c?.max_len ?? 60, 10, 60, 5, "s")}
       </div></div>
       <div class="ob"><div class="ot">Caption style</div>${choice("o_style", Object.entries(S.status.styles).map(([k, v]) => ({v:k, label:v, prev:capPrev(k)})), c?.style ?? "bounce")}</div>
       <div class="ob"><div class="ot">Layout</div>${choice("o_layout", Object.entries(S.status.layouts).map(([k, v]) => ({v:k, label:LAYOUT_SHORT[k] || v, title:v, prev:`<span class="lay-prev ${esc(k)}"><span class="ph"><i></i></span></span>`})), c?.layout ?? "blur")}</div>
@@ -1408,10 +1445,24 @@ const att = () => DRAFTS[draftKey()] ||= {files: [], links: [], note: null, busy
 const VIDEO_EXT = /\.(mp4|mov|mkv|webm|m4v|ts|flv)$/i;
 const fmtLen = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, "0"); return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`; };
 const fmtSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB";
-const isChannel = u => /^(https?:\/\/)?(www\.)?(twitch\.tv|kick\.com)\/[A-Za-z0-9_]+\/?$/.test(u) || /youtube\.com\/(@[^/]+|channel\/[^/]+)\/?(live|videos|streams)?\/?$/.test(u);
+const isChannel = u => /^(https?:\/\/)?(www\.)?(twitch\.tv|kick\.com)\/[A-Za-z0-9_]+\/?$/.test(u) || /youtube\.com\/(?:@[^/]+|(?:channel|c|user)\/[^/]+)(?:\/(?:live|videos|streams|featured|about))?\/?(?:[?#].*)?$/i.test(u);
+function guessCreatorName(raw) {
+  try {
+    const u = new URL(/^[a-z]+:\/\//i.test(raw) ? raw : "https://" + raw);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (host === "youtube.com" || host === "m.youtube.com") {
+      const id = parts[0]?.startsWith("@") ? parts[0].slice(1)
+        : ["channel", "c", "user"].includes((parts[0] || "").toLowerCase()) ? parts[1] : "";
+      return id ? decodeURIComponent(id).replace(/[_-]+/g, " ") : "";
+    }
+    if (host === "twitch.tv" || host === "kick.com") return decodeURIComponent(parts[0] || "").replace(/[_-]+/g, " ");
+  } catch {}
+  return "";
+}
 const looksLink = u => /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be|twitch\.tv|kick\.com)\//i.test(u);
 const fullLink = u => /[?&]v=[\w-]{11}\b|youtu\.be\/[\w-]{11}\b|\/(shorts|live|embed)\/[\w-]{11}\b|twitch\.tv\/videos\/\d{6,}|clips\.twitch\.tv\/\w|twitch\.tv\/\w+\/clip\/\w|kick\.com\/[\w-]+\/(videos?|clips?)\/[\w-]{6,}/i.test(u);
-const batchMax = () => S.status.max_batch || 3;
+const batchMax = () => S.status.max_batch || 5;
 const batchUsed = A => A.files.length + A.links.filter(l => l.state !== "bad").length;
 const newId = () => Math.random().toString(36).slice(2);
 
@@ -1478,7 +1529,7 @@ async function lookUp(u) {
     if (e instanceof TypeError) {           // the request itself dropped (network blip): try once more quietly
       await new Promise(r => setTimeout(r, 800));
       try { return await api("/api/preview?url=" + encodeURIComponent(u)); }
-      catch (e2) { throw new Error(e2 instanceof TypeError ? "Couldn't reach PeakCut to check that link. Check your connection and paste it again." : e2.message); }
+      catch (e2) { throw new Error(e2 instanceof TypeError ? "Couldn't reach Clippy to check that link. Check your connection and paste it again." : e2.message); }
     }
     throw e;
   }
@@ -1809,7 +1860,7 @@ function drawCreatorForm() {
       <div class="fields"><label class="f">Caption style<select data-k="style">${opts(S.status.styles, c.style)}</select></label>
         <label class="f">Layout<select data-k="layout">${opts(S.status.layouts, c.layout)}</select></label>
         <label class="f">Shortest clip (seconds)<input data-k="min_len" type="number" value="${c.min_len}"></label>
-        <label class="f">Longest clip (seconds)<input data-k="max_len" type="number" value="${c.max_len}"></label>
+        <label class="f">Longest clip (seconds)<input data-k="max_len" type="number" min="10" max="60" value="${c.max_len}"></label>
         <label class="f">Clips per video<input data-k="max_clips" type="number" value="${c.max_clips}"></label>
         <label class="f">Minutes of live stream to keep<input data-k="buffer_min" type="number" value="${c.buffer_min}"></label></div></div>
     <div class="card"><h2>Posting</h2><p class="help">${A.length ? "Choose the accounts this creator's clips go to. One account can be shared by several creators." : "No accounts are connected yet. Connect one in Settings, then come back."}</p>
@@ -1861,7 +1912,7 @@ function nextSteps(o) {
   const st = [];
   if (!S.creators.length) st.push(["Add your first creator", "Give each streamer their own workspace, settings and folder.", "newcreator"]);
   if (!S.jobs.length) st.push(["Make your first clips", "Paste a video link in the box above.", "focusurl"]);
-  if (!S.accounts.length) st.push(["Connect a posting account", "YouTube, Instagram, or an outbox folder for TikTok.", "go:settings"]);
+  if (!S.accounts.length) st.push(["Connect a posting account", "YouTube or Instagram.", "go:settings"]);
   if (S.creators.length && !S.creators.some(c => c.auto_watch)) st.push(["Turn on auto-record", "Record by itself whenever a creator goes live.", "go:c:" + S.creators[0].id + ":setup"]);
   return st;
 }
@@ -1885,7 +1936,7 @@ function drawOverview() {
         ${barChart(o.daily || [])}</div>
       ${aiCard()}
     </div>
-    ${steps.length ? `<div class="card"><div class="card-head"><div><h2>Next steps</h2><p class="sub">Finish setting up PeakCut</p></div></div>
+    ${steps.length ? `<div class="card"><div class="card-head"><div><h2>Next steps</h2><p class="sub">Finish setting up Clippy</p></div></div>
       <div class="steps across">${steps.map((x, i) => `<button class="step" data-act="step" data-to="${esc(x[2])}"><span class="n">${i + 1}</span><span><b>${esc(x[0])}</b><span class="d">${esc(x[1])}</span></span>${ic("arrowr")}</button>`).join("")}</div></div>` : ""}
     <div class="card"><div class="card-head"><div><h2>Creators</h2><p class="sub">Each creator's status and results</p></div></div>
       ${o.creators.length ? `<div class="scroll"><table><tr><th>Creator</th><th>Status</th><th>Auto-post</th><th class="num">Clips today</th><th class="num">Posted today</th><th class="num">Waiting</th><th class="num">Failed</th><th class="num">Views</th><th class="num">Est. $</th></tr>
@@ -1926,9 +1977,10 @@ function hbars(rows) {
 }
 function drawUsage() {
   const k = S.usage, box = $("#usage"); if (!k || !box) return;
-  box.innerHTML = `${k.ready ? "" : `<div class="note">${ic("warn")}<span>${S.status.user?.is_admin ? "No AI key is set, so clips are picked by loudness only. Add your key under Settings, AI." : "The AI isn't set up on this server yet, so clips are picked by loudness."}</span></div>`}
+  const local = String(k.provider || "").startsWith("Ollama");
+  box.innerHTML = `${k.ready ? "" : `<div class="note">${ic("warn")}<span>${esc(k.message || (local ? "Ollama is not ready, so clips are picked by loudness only." : S.status.user?.is_admin ? "Set up an AI service under Settings, AI. Until then, clips are picked by loudness." : "The AI isn't set up on this server yet, so clips are picked by loudness."))}</span></div>`}
     <div class="tiles five" style="margin-top:${k.ready ? 0 : 16}px">
-      <div class="tile"><i>${ic("bolt")}</i><b>${k.ready ? esc(k.provider || "Ready") : "Not set up"}</b><span>${k.ready && k.model ? esc(k.model) : "AI service"}</span></div>
+      <div class="tile"><i>${ic("bolt")}</i><b>${k.ready ? esc(k.provider || "Ready") : local ? "Ollama not ready" : "Not set up"}</b><span>${k.model ? esc(k.model) : "AI service"}</span></div>
       <div class="tile"><i>${ic("clock")}</i><b>${(k.today_calls || 0).toLocaleString()}</b><span>AI calls today</span></div>
       <div class="tile"><i>${ic("chart")}</i><b>${fmtK(k.today_tokens)}</b><span>Tokens today</span></div>
       <div class="tile"><i>${ic("scissors")}</i><b>${(k.calls_total || 0).toLocaleString()}</b><span>AI calls in total</span></div>
@@ -1947,15 +1999,16 @@ function drawUsage() {
 /* ============================================================ settings */
 // With sign-in off there is no profile or password to manage. The AI section is for whoever runs the server.
 const setTabs = () => [
-  ...(S.status.user?.is_admin ? [["ai", "AI", "bolt", "Your AI service, model and key"]] : []),
+  ...(S.status.user?.is_admin ? [["ai", "AI", "bolt", "Local model or optional cloud service"]] : []),
   ...(S.status.accounts === false ? [] : [["profile", "Profile", "user", "Your name, email and how you sign in"],
                                           ["security", "Security", "lock", "Password and signing out"]]),
   ["apps", "Connected apps", "plug", "Where your clips get posted"]];
 function aiHints() {
   const k = S.ai, sel = $("#ai_provider"); if (!k || !sel) return;
   const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], same = pv.id === k.provider;
+  $("#ai_key").closest("label").hidden = pv.id === "ollama";
   $("#ai_key").placeholder = same && k.has_key ? `Saved${k.key_hint ? ", ends in " + k.key_hint : ""}. Paste a new key to replace it` : pv.needs_key ? "Paste your key" : "Not needed";
-  $("#ai_keyhint").innerHTML = pv.key_url ? `${pv.needs_key ? "Get a key at" : "Set it up at"} <a href="${esc(pv.key_url)}" target="_blank" rel="noopener">${esc(pv.key_url.replace("https://", ""))}</a>. The key stays on this server and is never shown again.` : "The key stays on this server and is never shown again.";
+  $("#ai_keyhint").innerHTML = pv.id === "ollama" ? `No key needed. Install Ollama and pull a local model such as <code>${esc(pv.example)}</code>.` : pv.key_url ? `${pv.needs_key ? "Get a key at" : "Set it up at"} <a href="${esc(pv.key_url)}" target="_blank" rel="noopener">${esc(pv.key_url.replace("https://", ""))}</a>. The key stays on this server and is never shown again.` : "The key stays on this server and is never shown again.";
   $("#ai_model").placeholder = pv.example ? "For example " + pv.example : "The model id, exactly as the service names it";
   $("#ai_base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
   $("#ai_basewrap").hidden = pv.id !== "custom" && !(same && k.base_url);
@@ -1970,21 +2023,21 @@ async function drawSettings() {
   try {
     if (tab === "ai") {
       const k = S.ai = await api("/api/ai");
-      body.innerHTML = `<section class="set-sec"><h2>AI</h2><p class="help">PeakCut uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own key from any of these services. You pay that service directly. Without a key, clips are picked by loudness.</p>
-          <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${esc(k.models[0] || "")}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and pick a model.</span>`}</div>
+      body.innerHTML = `<section class="set-sec"><h2>AI</h2><p class="help">For free local AI, run Ollama on this computer and pull a model such as <code>qwen2.5:7b</code>. Clippy uses it to pick moments and write hooks and titles without API calls or credits. Cloud services are optional and may charge. If Ollama is unavailable, Clippy uses a local audio based picker and clearly labels that fallback.</p>
+          <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${esc(k.models[0] || "")}</span>` : `<span class="pill warn">Not ready</span><span class="sub">${esc(k.message || "Run Ollama locally and install a model, or choose an optional cloud service.")}</span>`}</div>
           <div class="ai-form">
             <label class="f">AI service<select id="ai_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === k.provider ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Key<input id="ai_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_keyhint"></span></label>
             <label class="f" id="ai_basewrap">Address<input id="ai_base" value="${esc(k.base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
             <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button></span>
-              <datalist id="ai_models"></datalist><span class="hint">A fast, inexpensive model is the right choice. Add a second one after a comma to fall back on.</span></label>
+              <datalist id="ai_models"></datalist><span class="hint">For Ollama, enter a model installed on this computer. Add a second model after a comma to try it if the first fails.</span></label>
           </div>
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>`;
       aiHints();
     }
     if (tab === "profile") {
       const joined = me.created_at ? new Date(me.created_at * 1000).toLocaleDateString([], {day: "numeric", month: "long", year: "numeric"}) : "";
-      body.innerHTML = `<section class="set-sec"><h2>Profile</h2><p class="help">This is how you appear in PeakCut.</p>
+      body.innerHTML = `<section class="set-sec"><h2>Profile</h2><p class="help">This is how you appear in Clippy.</p>
         <div class="prof">${meAvatar(me).replace('class="avatar me-pic"', 'class="avatar prof-pic"')}<div><b>${esc(me.name)}</b><span>${esc(me.email)}</span></div></div>
         <dl class="kv"><div><dt>Email</dt><dd>${esc(me.email)} ${me.verified === false ? `<span class="pill warn">Not confirmed</span>` : `<span class="pill ok">Confirmed</span>`}</dd></div>
           <div><dt>Sign-in method</dt><dd>${me.google ? `Google${me.has_password ? " and password" : ""}` : "Email and password"}</dd></div>
@@ -1998,31 +2051,54 @@ async function drawSettings() {
             <label class="f">${me.has_password ? "New password" : "Password"}<input id="pw_new" type="password" autocomplete="new-password" placeholder="At least 8 characters"></label></div>
           <div class="row" style="margin-top:14px"><button class="btn primary" data-act="pwsave">${me.has_password ? "Change password" : "Set password"}</button>
             ${me.has_password ? `<a class="btn ghost" href="/reset">Forgot it?</a>` : ""}</div></section>
-        <section class="set-sec"><h2>Sessions</h2><p class="help">Sign out of PeakCut on this device. Changing your password signs out every other device too.</p>
+        <section class="set-sec"><h2>Sessions</h2><p class="help">Sign out of Clippy on this device. Changing your password signs out every other device too.</p>
           <button class="btn" data-act="logout">${ic("signout")}Sign out</button></section>
         <section class="set-sec"><h2 style="color:var(--bad)">Delete account</h2><p class="help">Removes your account and everything in it for good: creators, recordings, videos, clips and history.</p>
           <button class="btn danger" data-act="delaccount">${ic("trash")}Delete my account</button></section>`;
     }
     if (tab === "apps") {
       const conn = S.accounts || [];
-      const app = (key, name, logo, bg, desc, action, list) => `<div class="appcard"><span class="applogo" style="background:${bg}">${logo}</span>
-          <div class="apptx"><b>${name}</b><span>${desc}</span>${list}</div><div class="appact">${action}</div></div>`;
       const mine = plat => conn.filter(a => (a.platform || a.label || "").toLowerCase().includes(plat));
       const listOf = arr => arr.length ? `<div class="applist">${arr.map(a => `<div><span class="pill ok">Connected</span><b>${esc(a.name)}</b><span class="sub">${esc(a.detail || "")}</span>
           <button class="btn sm ghost" data-act="accremove" data-id="${esc(a.id)}">Disconnect</button></div>`).join("")}</div>` : "";
       const yt = '<svg viewBox="0 0 24 24"><path fill="#fff" d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.55 12 3.55 12 3.55s-7.5 0-9.38.5A3.02 3.02 0 0 0 .5 6.19C0 8.07 0 12 0 12s0 3.93.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.5 9.38.5 9.38.5s7.5 0 9.38-.5a3.02 3.02 0 0 0 2.12-2.14C24 15.93 24 12 24 12s0-3.93-.5-5.81zM9.55 15.57V8.43L15.82 12l-6.27 3.57z"/></svg>';
       const ig = '<svg viewBox="0 0 24 24"><path fill="#fff" d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23a3.7 3.7 0 0 1-.9 1.38c-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.7 3.7 0 0 1-1.38-.9 3.7 3.7 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zM12 5.84a6.16 6.16 0 1 0 0 12.32 6.16 6.16 0 0 0 0-12.32zm0 10.16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.4-11.85a1.44 1.44 0 1 0 0 2.88 1.44 1.44 0 0 0 0-2.88z"/></svg>';
-      const tt = '<svg viewBox="0 0 24 24"><path fill="#fff" d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64c.3 0 .59.04.86.13v-3.5a6.37 6.37 0 0 0-.86-.05A6.34 6.34 0 0 0 3.15 15.7a6.34 6.34 0 0 0 10.86 4.43 6.3 6.3 0 0 0 1.81-4.43V8.73a8.2 8.2 0 0 0 4.77 1.52V6.8a4.85 4.85 0 0 1-1-.11z"/></svg>';
-      body.innerHTML = `<section class="set-sec"><h2>Connected apps</h2><p class="help">Connect the accounts PeakCut can post clips to. Each one can then be switched on per creator, in that creator's Setup. You always sign in on the platform's own page; PeakCut never sees your passwords.</p>
+      const admin = !!me.is_admin, connect = S.status.connect || {};
+      const setup = admin ? await api("/api/apps").catch(() => null) : null;
+      const GUIDE = {
+        youtube: ["https://console.cloud.google.com/apis/credentials", "Google Cloud",
+          ["Create a project and turn on <b>YouTube Data API v3</b>.", "Create an <b>OAuth client ID</b> of type <b>Web application</b>.",
+           "Add the callback address below under <b>Authorised redirect URIs</b>.", "Paste its Client ID and Client secret here."],
+          "Google may keep an app in testing until you publish or verify it. Add your Google account as a test user while setting it up."],
+        instagram: ["https://developers.facebook.com/apps", "Meta for Developers",
+          ["Create a Meta app and add <b>Instagram API with Instagram Login</b>.",
+           "Request <b>instagram_business_basic</b> and <b>instagram_business_content_publish</b>.",
+           "Add the callback address below to the Instagram Login redirect URLs.", "Paste your Instagram app ID and app secret here."],
+          "Instagram publishing needs a Creator or Business account and a public HTTPS address so Instagram can fetch the clip. On this computer, use an HTTPS tunnel and set PEAKCUT_PUBLIC_URL to that address before connecting."]};
+      const card = (pf, name, logo, bg, desc) => {
+        const accs = mine(pf), st = setup?.[pf], open = S.setupOpen === pf, g = GUIDE[pf];
+        const ready = !!connect[pf] || !!st?.ready;
+        const action = (ready ? `<a class="btn sm primary" href="/oauth/${pf}/start">${ic("plus")}${accs.length ? "Add another" : "Connect"}</a>`
+            : admin ? `<button class="btn sm primary" data-act="appsetup" data-p="${pf}">${ic("cog")}Set up</button>`
+            : `<span class="pill">Not set up on this server</span>`)
+          + (ready && admin ? `<button class="btn sm ghost" data-act="appsetup" data-p="${pf}" title="Change this server's ${name} app">${ic("cog")}</button>` : "");
+        const panel = open && st ? `<div class="appsetup">
+            <p class="sub">Register this server once with <a href="${g[0]}" target="_blank" rel="noopener">${g[1]}</a>, then enter the app credentials below.</p>
+            <ol>${g[2].map(x => `<li>${x}</li>`).join("")}</ol>
+            <div class="copyrow"><code>${esc(st.redirect)}</code><button class="btn sm" data-act="copytext" data-t="${esc(st.redirect)}">${ic("copy")}Copy callback</button></div>
+            ${pf === "instagram" && !st.https ? `<p class="warnline">This address is not HTTPS. Meta requires a public HTTPS address; set PEAKCUT_PUBLIC_URL to your tunnel or domain first, then restart Clippy.</p>` : ""}
+            <div class="fields"><label class="f">${esc(st.id_label)}<input id="app_id" placeholder="${st.ready ? "Saved: " + esc(st.id_hint) + ". Paste a new one to replace it" : ""}" autocomplete="off" spellcheck="false"></label>
+              <label class="f">${esc(st.secret_label)}<input id="app_secret" type="password" placeholder="${st.ready ? "Saved. Paste a new one to replace it" : ""}" autocomplete="off"></label></div>
+            <p class="sub">${g[3]}</p>
+            <div class="row"><button class="btn primary" data-act="appsave" data-p="${pf}">Save</button><button class="btn ghost" data-act="appsetup" data-p="">Close</button></div></div>` : "";
+        return `<div class="appcard"><span class="applogo" style="background:${bg}">${logo}</span>
+          <div class="apptx"><b>${name}</b><span>${desc}</span>${listOf(accs)}</div><div class="appact">${action}</div>${panel}</div>`;
+      };
+      body.innerHTML = `<section class="set-sec"><h2>Connected apps</h2><p class="help">Connect the accounts Clippy can post clips to. You sign in on each platform's own page; Clippy never sees your password. Then choose accounts in a creator's Setup.</p>
         <div class="apps">
-          ${app("yt", "YouTube", yt, "#FF0000", "Post clips to your channel as Shorts.",
-              S.status.youtube ? `<a class="btn sm primary" href="/oauth/youtube/start" target="_blank" rel="noopener">${ic("plus")}Connect</a>` : `<span class="pill">Not available yet</span>`, listOf(mine("youtube")))}
-          ${app("ig", "Instagram", ig, "linear-gradient(45deg,#F58529,#DD2A7B,#8134AF)", "Post clips as Reels to a Creator or Business account.",
-              me.is_admin ? `<button class="btn sm" data-act="igform">${ic("plus")}Connect</button>` : `<span class="pill">Coming soon</span>`, listOf(mine("instagram")))}
-          ${app("tt", "TikTok", tt, "#000", "Post clips straight to TikTok.", `<span class="pill">Coming soon</span>`, "")}
-        </div>
-        <div id="igbox" hidden><div class="row" style="margin-top:12px"><input id="igtoken" type="password" placeholder="Instagram access token from your Meta developer app" autocomplete="off" style="flex:1 1 280px"><button class="btn primary" data-act="igadd">Connect Instagram</button></div>
-          <p class="sub" style="margin-top:6px">Admin only while the Meta app is in review.</p></div></section>`;
+          ${card("youtube", "YouTube", yt, "#FF0000", "Post clips to your channel as Shorts.")}
+          ${card("instagram", "Instagram", ig, "linear-gradient(45deg,#F58529,#DD2A7B,#8134AF)", "Post clips as Reels to a Creator or Business account.")}
+        </div></section>`;
     }
   } catch (e) { body.innerHTML = `<div class="set-load">${esc(e.message)}</div>`; }
 }
@@ -2116,7 +2192,24 @@ function loop() {
 }
 
 /* ============================================================ actions */
-document.addEventListener("submit", e => { if (e.target.id === "addform") { e.preventDefault(); makeClips(); } });
+document.addEventListener("submit", async e => {
+  if (e.target.id === "addform") { e.preventDefault(); makeClips(); return; }
+  if (e.target.id !== "newcreatorform") return;
+  e.preventDefault();
+  const form = e.target, button = form.querySelector('[type="submit"]'), dlg = $("#formdlg");
+  button.disabled = true; button.textContent = "Creating…";
+  try {
+    const c = await send("/api/creators", {name:$("#nc_name").value, channel:$("#nc_chan").value});
+    dlg.close();
+    await tick();
+    if (!S.creators.some(x => x.id === c.id)) S.creators.unshift(c);
+    go("c:" + c.id, c.channel ? "clips" : "setup");
+    toast("Workspace created", "ok");
+  } catch (err) {
+    button.disabled = false; button.textContent = "Create workspace";
+    toast(err.message, "bad");
+  }
+});
 $("#file").addEventListener("change", e => { attach(e.target.files); e.target.value = ""; });
 document.addEventListener("dragover", e => { const a = $(".composer"); if (a) { e.preventDefault(); a.classList.add("over"); } });
 document.addEventListener("dragleave", () => $(".composer")?.classList.remove("over"));
@@ -2187,33 +2280,33 @@ document.addEventListener("click", async e => {
     if (a === "pickfile") return $("#file").click();
     if (a === "addmore") { const u = $("#url"); return u && !u.value ? (u.focus(), toast("Paste another link, or drop a file anywhere on the box.")) : $("#file").click(); }
     if (a === "closedlg") return $("#clipdlg").close();
+    if (a === "creatorcancel") return $("#formdlg").close();
     if (a === "openclip") return openClip(d.j, d.c);
     if (a === "newcreator") {
       const dlg = $("#formdlg");
-      dlg.innerHTML = `<form method="dialog" class="dlg"><h2>New creator</h2><p class="help">Each creator gets their own workspace, folder, settings and accounts.</p>
+      dlg.onclose = null;
+      dlg.innerHTML = `<form class="dlg" id="newcreatorform"><h2>New creator</h2><p class="help">Add a YouTube channel or video, or start with a name and connect a channel later. Each creator gets their own workspace and settings.</p>
         <label class="f">Channel link<input id="nc_chan" placeholder="https://www.youtube.com/@name, twitch.tv/name or kick.com/name" autofocus></label>
         <div id="nc_prev"></div>
         <label class="f">Name<input id="nc_name" placeholder="Filled in from the channel, or type one" required></label>
-        <div class="dlg-foot"><button class="btn" value="no" formnovalidate>Cancel</button><button class="btn primary" value="yes">Create workspace</button></div></form>`;
-      dlg.onclose = async () => {
-        if (dlg.returnValue !== "yes") return;
-        try { const c = await send("/api/creators", {name:$("#nc_name").value, channel:$("#nc_chan").value}); await tick(); go("c:" + c.id, c.channel ? "clips" : "setup"); toast("Workspace created", "ok"); }
-        catch (err) { toast(err.message, "bad"); }
-      };
+        <div class="dlg-foot"><button class="btn" type="button" data-act="creatorcancel">Cancel</button><button class="btn primary" type="submit">Create workspace</button></div></form>`;
       let seq = 0, timer = 0, auto = "";
       $("#nc_chan").addEventListener("input", e => {
         clearTimeout(timer); const u = e.target.value.trim(), me = ++seq, box = $("#nc_prev");
-        if (!u) { box.innerHTML = ""; return; }
+        const n = $("#nc_name"), guess = guessCreatorName(u);
+        if (!u) { box.innerHTML = ""; if (!n.value.trim() || n.value === auto) n.value = auto = ""; return; }
+        if (guess && (!n.value.trim() || n.value === auto)) n.value = auto = guess;
         box.innerHTML = `<div class="chprev"><span class="ph"></span><div><span class="sk"></span><span class="sk" style="width:80px"></span></div></div>`;
         timer = setTimeout(async () => {
           try {
             const p = await api("/api/channel-preview?url=" + encodeURIComponent(u)); if (me !== seq) return;
             box.innerHTML = `<div class="chprev">${p.pic ? `<img src="${p.pic}" alt="">` : `<span class="ph"></span>`}<div><b>${esc(p.name)}</b><span>${esc([p.platform, p.followers].filter(Boolean).join(" · "))}</span></div></div>`;
-            const n = $("#nc_name"); if (!n.value.trim() || n.value === auto) { n.value = auto = p.name; }
+            if (!n.value.trim() || n.value === auto) n.value = auto = p.name;
+            if (p.channel && p.channel !== u) $("#nc_chan").value = p.channel;
           } catch (err) { if (me === seq) box.innerHTML = `<div class="chprev bad">${esc(err.message)}</div>`; }
         }, 400);
       });
-      dlg.returnValue = "no"; return dlg.showModal();
+      return dlg.showModal();
     }
     if (a === "copy") {
       const c = jobOf(d.j).clips.find(x => x.id === d.c);
@@ -2277,10 +2370,13 @@ document.addEventListener("click", async e => {
     if (a === "golive") {
       if (!creator().channel) { setTab("setup"); return toast("Connect one of their channels first, then press Start recording.", "bad"); }
       b.disabled = true; const was = b.innerHTML; b.innerHTML = `<span class="rdot"></span>Starting…`;
+      const requestedCreator = creatorId();
       try {
-        const j = await send(`/api/creators/${creatorId()}/live`, d.url ? {channel: d.url} : {});
-        if (j?.id) { const c = creator(); if (c) c.live_job = j.id; if (!jobOf(j.id)) S.jobs.unshift(j); render(); }
-        toast("Recording started. Clips appear below as they're made.", "ok"); setTab("clips");
+        const j = await send(`/api/creators/${requestedCreator}/live`, d.url ? {channel: d.url} : {});
+        if (j?.id) { const c = S.creators.find(x => x.id === requestedCreator); if (c) c.live_job = j.id; if (!jobOf(j.id)) S.jobs.unshift(j); render(); }
+        const stillHere = creatorId() === requestedCreator;
+        toast(stillHere ? "Recording started. Clips appear below as they're made." : `Recording started for ${S.creators.find(x => x.id === requestedCreator)?.name || "that creator"}.`, "ok");
+        if (stillHere) setTab("clips");
       } catch (e) { b.disabled = false; b.innerHTML = was; throw e; }
       return tick();
     }
@@ -2301,7 +2397,14 @@ document.addEventListener("click", async e => {
     }
     if (a === "tour") return startTour();
     if (a === "settab") { e.preventDefault(); S.stab = d.k; remember("settings", d.k); return drawSettings(); }
-    if (a === "igform") { const x = $("#igbox"); x.hidden = !x.hidden; if (!x.hidden) $("#igtoken").focus(); return; }
+    if (a === "updhow") return updateHow();
+    if (a === "updlater") { try { localStorage.setItem("clippy_update_seen", S.status.update?.latest || ""); } catch {} return drawShell(); }
+    if (a === "appsetup") { S.setupOpen = d.p && S.setupOpen !== d.p ? d.p : ""; return drawSettings(); }
+    if (a === "copytext") { await navigator.clipboard.writeText(d.t); return toast("Copied", "ok"); }
+    if (a === "appsave") {
+      await send("/api/apps", {platform: d.p, client_id: $("#app_id").value, client_secret: $("#app_secret").value}, "PUT");
+      S.setupOpen = ""; S.status = await api("/api/status"); toast("Saved. Accounts can connect now.", "ok"); return drawSettings();
+    }
     if (a === "bell") return openBell();
     if (a === "feedback") return openFeedback("bug");
     if (a === "report") return openFeedback("bug", d.ctx);
@@ -2318,7 +2421,6 @@ document.addEventListener("click", async e => {
       await send("/api/settings", {plans:p}, "PUT"); S.status = await api("/api/status"); toast("Plans saved", "ok"); return drawSettings();
     }
     if (a === "testalert") { await saveSettings(); await api("/api/alerts/test", {method:"POST"}); return toast("Test message sent. Check your phone.", "ok"); }
-    if (a === "igadd") { await send("/api/accounts/instagram", {token:$("#igtoken").value}); toast("Instagram connected", "ok"); await tick(); return drawSettings(); }
     if (a === "accremove") {
       if (!await ask("Disconnect this account?", "Posts still waiting for it will fail.", "Disconnect", true)) return;
       await api(`/api/accounts/${d.id}`, {method:"DELETE"}); await tick(); return drawSettings();
@@ -2343,8 +2445,13 @@ $("#main").addEventListener("scroll", () => $(".topbar").classList.toggle("stuck
 (async () => {
   try { S.status = await api("/api/status"); } catch {}
   const q = new URLSearchParams(location.search);
-  if (q.get("verified")) { history.replaceState(null, "", location.pathname); setTimeout(() => toast("Email confirmed. You're ready to clip.", "ok"), 300); }
-  if (q.get("verify_error")) { history.replaceState(null, "", location.pathname); setTimeout(() => toast(q.get("verify_error"), "bad"), 300); }
+  if (q.get("connected") || q.get("connect_error")) {
+    const ok = q.get("connected"), err = q.get("connect_error"), name = q.get("name");
+    if (location.protocol !== "file:") history.replaceState(null, "", location.pathname);
+    setTimeout(() => ok ? toast(`${name || ok} is connected. Choose it in a creator's Setup to post there.`, "ok") : toast(err, "bad"), 300);
+  }
+  if (q.get("verified")) { if (location.protocol !== "file:") history.replaceState(null, "", location.pathname); setTimeout(() => toast("Email confirmed. You're ready to clip.", "ok"), 300); }
+  if (q.get("verify_error")) { if (location.protocol !== "file:") history.replaceState(null, "", location.pathname); setTimeout(() => toast(q.get("verify_error"), "bad"), 300); }
   if (location.pathname.startsWith("/app/")) { const [v, tab] = fromPath(location.pathname); S.view = v; S.ctab = tab; }  // the address decides, before anything loads
   await tick();
   { const [v, tab] = location.pathname.startsWith("/app/") ? fromPath(location.pathname) : ["overview", "clips"]; go(v, tab, true); remember(S.view, S.ctab, "replace"); }

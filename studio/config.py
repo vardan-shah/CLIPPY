@@ -60,10 +60,22 @@ FONTS_DIR = DATA_DIR / "fonts"          # caption fonts, copied from studio/font
 # YouTube already has a word-by-word transcript of most videos. With this on, that is what the AI reads to find the
 # clips (seconds instead of transcribing hours), and our own model is run only on the clips themselves.
 YT_TRANSCRIPT = env("PEAKCUT_YT_TRANSCRIPT", "1") != "0"
-# the compact model for processors; a machine with a graphics card sets PEAKCUT_ASR_MODEL to the full-precision one
-ASR_MODEL_NAME = env("PEAKCUT_ASR_MODEL", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
+# The multilingual Whisper Turbo model detects languages and returns word times for captions. Set PEAKCUT_ASR_MODEL
+# to keep using a different local model.
+ASR_MODEL_NAME = env("PEAKCUT_ASR_MODEL", "faster-whisper-large-v3-turbo")
+ASR_MODEL_TYPE = env("PEAKCUT_ASR_MODEL_TYPE", "faster_whisper" if "faster-whisper" in ASR_MODEL_NAME.lower()
+                     else "whisper" if "whisper" in ASR_MODEL_NAME.lower() else "transducer").strip().lower()
+ASR_MODEL_REPO = env("PEAKCUT_ASR_MODEL_REPO", "dropbox-dash/faster-whisper-large-v3-turbo").strip()
 ASR_MODEL_DIR = MODELS_DIR / ASR_MODEL_NAME
 DATABASE_URL = env("DATABASE_URL") or f"sqlite:///{(DATA_DIR / 'peakcut.db').as_posix()}"
+
+# Homebrew's regular FFmpeg build omits ASS subtitles. Prefer the full build when it is installed, while still
+# allowing a user or server to name their own FFmpeg binaries.
+_ffmpeg_override = env("PEAKCUT_FFMPEG", "").strip()
+_ffmpeg_full = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+FFMPEG = _ffmpeg_override or (str(_ffmpeg_full) if _ffmpeg_full.is_file() else "ffmpeg")
+_ffprobe_override = env("PEAKCUT_FFPROBE", "").strip()
+FFPROBE = _ffprobe_override or (str(Path(FFMPEG).with_name("ffprobe")) if Path(FFMPEG).name != FFMPEG else "ffprobe")
 
 for d in (USERS_DIR, MODELS_DIR, TMP_DIR, FONTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -81,14 +93,14 @@ PORT = int(env("PEAKCUT_PORT") or "8765")
 PUBLIC_URL = (env("PEAKCUT_PUBLIC_URL") or f"http://127.0.0.1:{PORT}").rstrip("/")   # e.g. https://peakcut.com
 HTTPS = PUBLIC_URL.startswith("https://")
 SESSION_DAYS = int(env("PEAKCUT_SESSION_DAYS", "30"))
-# Accounts are off by default: PeakCut opens straight into the dashboard, with no sign-in, which is what you want
+# Accounts are off by default: Clippy opens straight into the dashboard, with no sign-in, which is what you want
 # on your own computer. On a server that other people can reach, set PEAKCUT_ACCOUNTS=1: everyone then signs up
 # and signs in, and each person only sees their own videos.
 ACCOUNTS = env("PEAKCUT_ACCOUNTS", "0") == "1"
 # The two buttons along the top of the dashboard: the project's code, and where to follow its maker (feedback goes
 # there too). Set either to an empty value to hide that button, or point them at your own pages in a fork.
-REPO_URL = env("PEAKCUT_REPO_URL", "https://github.com/haziqahmedqasmi/peakcut").strip()
-FOLLOW_URL = env("PEAKCUT_FOLLOW_URL", "https://www.instagram.com/haziq.builds/").strip()
+REPO_URL = env("PEAKCUT_REPO_URL", "https://github.com/vardan-shah/CLIPPY").strip()
+FOLLOW_URL = env("PEAKCUT_FOLLOW_URL", "").strip()
 
 # ---------------------------------------------------------------- limits (per user, and for the whole server)
 MAX_UPLOAD_MB = int(env("PEAKCUT_MAX_UPLOAD_MB", "2048"))        # the largest video file someone may upload
@@ -97,7 +109,7 @@ MAX_UPLOAD_MB = int(env("PEAKCUT_MAX_UPLOAD_MB", "2048"))        # the largest v
 UPLOAD_PART_MB = max(5, int(env("PEAKCUT_UPLOAD_PART_MB", "40")))
 # The most videos that may ever run at once. How many actually run is decided by how busy the machine is (load.py).
 JOB_WORKERS = int(env("PEAKCUT_JOB_WORKERS") or max(2, os.cpu_count() or 4))
-MAX_ACTIVE_JOBS_PER_USER = int(env("PEAKCUT_MAX_JOBS_PER_USER", "3"))
+MAX_ACTIVE_JOBS_PER_USER = int(env("PEAKCUT_MAX_JOBS_PER_USER", "5"))
 MAX_LIVE_TOTAL = int(env("PEAKCUT_MAX_LIVE") or max(4, 2 * (os.cpu_count() or 4)))   # ceiling; real load decides below it
 MAX_LIVE_PER_USER = int(env("PEAKCUT_MAX_LIVE_PER_USER", "1"))
 MAX_VIDEO_HOURS = float(env("PEAKCUT_MAX_VIDEO_HOURS", "6"))    # longest video (or chosen part of one) that is processed
@@ -106,10 +118,10 @@ MAX_USER_GB = float(env("PEAKCUT_MAX_USER_GB", "50"))           # disk space one
 ALLOWED_SITES = tuple(s.strip().lower() for s in env(
     "PEAKCUT_ALLOWED_SITES", "youtube.com,youtu.be,twitch.tv,kick.com").split(",") if s.strip())
 
-# ---------------------------------------------------------------- AI (bring your own key: see studio/ai.py)
+# ---------------------------------------------------------------- AI (local-first; no account or API credits needed)
 # These are the starting values. Whatever is saved from the dashboard (Settings, AI) is used instead.
-AI_PROVIDER = env("PEAKCUT_AI_PROVIDER", "gemini").strip().lower()            # gemini, openai, xai, groq, openrouter, anthropic, ollama, custom
-AI_MODELS = [m.strip() for m in env("PEAKCUT_AI_MODELS", "").split(",") if m.strip()]   # tried in this order
+AI_PROVIDER = env("PEAKCUT_AI_PROVIDER", "ollama").strip().lower()            # ollama runs on this machine; cloud providers are optional
+AI_MODELS = [m.strip() for m in env("PEAKCUT_AI_MODELS", "qwen2.5:7b").split(",") if m.strip()]   # tried in this order
 AI_BASE_URL = env("PEAKCUT_AI_BASE_URL", "").rstrip("/")                      # only for "custom", or to override a provider's address
 
 
@@ -119,7 +131,7 @@ def ai_key() -> str:
 
 def ai_ready() -> bool:
     from . import ai
-    return ai.ready()
+    return bool(ai.public()["ready"])
 
 
 # ---------------------------------------------------------------- account emails (see mailer.py)
@@ -128,7 +140,7 @@ SMTP_PORT = int(env("PEAKCUT_SMTP_PORT", "587"))
 SMTP_USER = env("PEAKCUT_SMTP_USER", "")
 MAIL_FROM = env("PEAKCUT_MAIL_FROM", "")
 CONTACT_EMAIL = env("PEAKCUT_CONTACT_EMAIL", "")
-LEGAL_NAME = env("PEAKCUT_LEGAL_NAME", "")            # the business that runs PeakCut, for the legal pages
+LEGAL_NAME = env("PEAKCUT_LEGAL_NAME", "")            # the business that runs Clippy, for the legal pages
 LEGAL_COUNTRY = env("PEAKCUT_LEGAL_COUNTRY", "")      # whose law applies, for the terms
 # Set to 1 on a public site with email set up: password sign-ups must then confirm their address before clipping.
 VERIFY_EMAIL = env("PEAKCUT_VERIFY_EMAIL", "0") == "1"

@@ -91,7 +91,7 @@ notices = sa.Table(                                                           # 
     sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
     sa.Column("user_id", sa.String(40), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     sa.Column("t", sa.Float, nullable=False),
-    sa.Column("kind", sa.String(20), nullable=False),                         # live | clips | post | account | feedback
+    sa.Column("kind", sa.String(20), nullable=False),                         # live | clips | fail | post | account | feedback
     sa.Column("title", sa.String(160), nullable=False),
     sa.Column("body", sa.String(400), nullable=False, server_default=""),
     sa.Column("link", sa.String(200), nullable=False, server_default=""),

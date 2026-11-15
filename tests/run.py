@@ -2,7 +2,7 @@
 
     python tests/run.py
 
-Starts PeakCut on a spare port with an empty, temporary data folder, runs the tests against it, then stops it and
+Starts Clippy on a spare port with an empty, temporary data folder, runs the tests against it, then stops it and
 deletes the folder. Your real data and your running server are never touched. No AI key is needed: the tests cover accounts, permissions, limits and the queue, not clip quality."""
 import os
 import shutil
@@ -23,6 +23,7 @@ def main() -> int:
     env = {**os.environ, "PEAKCUT_DATA": str(data), "PEAKCUT_PORT": str(PORT), "PEAKCUT_PUBLIC_URL": BASE,
            "PEAKCUT_HOST": "127.0.0.1", "PEAKCUT_AUTO_RELOAD": "0", "DATABASE_URL": "",
            "PEAKCUT_ACCOUNTS": "1",                   # these tests are about people signing in; tests/test_local.py covers the default
+           "PEAKCUT_UPDATE_CHECK": "0",               # no GitHub requests while the isolated suite runs
            # nothing outside this machine is contacted: no AI, no email, no Google sign-in
            "PEAKCUT_SMTP_HOST": "", "PEAKCUT_VERIFY_EMAIL": "1",   # the tests cover the confirm-your-email rule
            "GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "", "GOOGLE_CLIENT_FILE": "", "PYTHONUNBUFFERED": "1",
@@ -51,8 +52,12 @@ def main() -> int:
                 ("deleting and bulk actions", ["tests/test_delete.py"]),
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
                 ("AI services", ["tests/test_ai.py"]),
+                ("YouTube creator detection", ["tests/test_profiles.py"]),
+                ("YouTube and Instagram account connections", ["tests/test_connect.py"]),
+                ("Clippy update notices", ["tests/test_updates.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
-                ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"])]
+                ("Hindi captions in Roman Hinglish", ["tests/test_roman.py"]),
+                ("Hindi language detection fallback", ["tests/test_indian_language.py"])]
         for name, args in runs:
             print(f"\n=== {name} ===", flush=True)
             r = subprocess.run([sys.executable, *args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")

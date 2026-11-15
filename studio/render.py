@@ -229,6 +229,30 @@ def _filter(layout, fg_h):
 
 
 _qsv_ok = None
+_ass_ok = None
+
+
+def _require_ass_filter():
+    """Fail before a job starts rendering if this FFmpeg build cannot draw its subtitles."""
+    global _ass_ok
+    if _ass_ok is None:
+        try:
+            p = subprocess.run([config.FFMPEG, "-hide_banner", "-filters"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", creationflags=NO_WINDOW, timeout=15)
+            _ass_ok = p.returncode == 0 and any(len(parts := line.split()) > 1 and parts[1] == "ass"
+                                                for line in (p.stdout + p.stderr).splitlines())
+        except (OSError, subprocess.TimeoutExpired):
+            _ass_ok = False
+    if not _ass_ok:
+        if not Path(config.FFMPEG).is_file() and config.FFMPEG != "ffmpeg":
+            reason = f"FFmpeg was not found at {config.FFMPEG}."
+        else:
+            reason = "This FFmpeg build does not include ASS subtitle support (libass)."
+        if __import__("sys").platform == "darwin":
+            reason += " Install it with `brew install ffmpeg-full`, then restart Clippy."
+        else:
+            reason += " Install an FFmpeg build with libass subtitle support, then restart Clippy."
+        raise RuntimeError(reason)
 
 
 def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, src_w: int, src_h: int) -> dict:
@@ -251,12 +275,13 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
 
 def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str) -> dict:
     global _qsv_ok
+    _require_ass_filter()
     (work / f"{name}.ass").write_text(ass, encoding="utf-8")
     (work / "f").mkdir()
     for f in config.FONTS_DIR.glob("*.ttf"):
         shutil.copyfile(f, work / "f" / f.name)
-    fc = _filter(layout, fg_h) + f"[v0]ass={name}.ass:fontsdir=f[v]"
-    base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
+    fc = _filter(layout, fg_h) + f"[v0]ass=filename={name}.ass:fontsdir=f[v]"
+    base = [config.FFMPEG, "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]
     encoders = []
@@ -277,7 +302,7 @@ def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layo
     else:
         raise RuntimeError(f"Render failed: {err}")
     cover_t = min(1.2, (end - start) / 2)
-    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{cover_t:.2f}", "-i", f"{name}.mp4", "-frames:v", "1",
+    run([config.FFMPEG, "-y", "-v", "error", "-ss", f"{cover_t:.2f}", "-i", f"{name}.mp4", "-frames:v", "1",
          "-q:v", "3", f"{name}.jpg"], cwd=work)
     for ext in ("mp4", "jpg", "ass"):
         shutil.move(str(work / f"{name}.{ext}"), str(out_dir / f"{name}.{ext}"))

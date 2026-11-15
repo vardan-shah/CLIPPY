@@ -1,4 +1,4 @@
-"""Abuse and limit tests against a throwaway PeakCut server. Usage: test_abuse.py <base url> <project root>"""
+"""Abuse and limit tests against a throwaway Clippy server. Usage: test_abuse.py <base url> <project root>"""
 import sys
 
 import httpx

@@ -1,5 +1,5 @@
-"""Hindi and Urdu captions come out in Roman letters (Hinglish): the same words at the same moments, never
-translated. The AI is replaced by a stand-in, so nothing leaves this machine."""
+"""Hindi captions and Arabic-script recognition mistakes come out in Roman Hinglish, never translated.
+The AI is replaced by a stand-in, so nothing leaves this machine."""
 import os, sys, tempfile
 os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="pc-roman-"); os.environ["DATABASE_URL"] = ""
 sys.path.insert(0, ".")
@@ -29,7 +29,7 @@ check("without AI, Hindi captions come out in Roman letters", text(out) == "are 
 check("...with every word at its own time", [(w["s"], w["e"]) for w in out] == [(w["s"], w["e"]) for w in src])
 check("short clips are spelled out too", text(brain.fix_caption_words(ws("जो उसको"), "")) == "jo usko")
 
-# ---- with the AI: its Hinglish is used, a translation is not, Urdu and other languages are handled
+# ---- with the AI: its Hinglish is used, a translation is not, and other scripts/languages are handled
 answers = {}
 def fake_ai(prompt, schema=None, purpose=""):
     return answers["now"], "m", 10
@@ -41,9 +41,9 @@ out = text(brain.fix_caption_words(src, ""))
 check("a translation is refused: the word is spelled out instead", out == "are chuna jo usko laga", out)
 answers["now"] = ["Arre", "चूना", "jo", "usko", "laga"]
 check("Hindi the AI left in its script is still spelled out", text(brain.fix_caption_words(src, "")) == "Arre chuna jo usko laga")
-urdu = ws("یار یہ کیا ہے")
+misread = ws("یار یہ کیا ہے")
 answers["now"] = ["Yaar", "ye", "kya", "hai"]
-check("Urdu script becomes the AI's Roman spelling", text(brain.fix_caption_words(urdu, "")) == "Yaar ye kya hai")
+check("Arabic-script speech recognition output becomes Roman Hinglish", text(brain.fix_caption_words(misread, "")) == "Yaar ye kya hai")
 spanish = ws("hola amigo que pasa")
 answers["now"] = ["Hola", "amigo,", "¿qué", "pasa?"]
 check("Spanish stays Spanish", text(brain.fix_caption_words(spanish, "")) == "Hola amigo, ¿qué pasa?")

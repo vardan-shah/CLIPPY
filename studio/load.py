@@ -4,7 +4,10 @@ Nothing here counts people. New heavy work (another video, another recording) st
 room, waits in line for a moment when it is nearly full, and is let through the second it frees up again. That is
 what keeps a rush from slowing everyone down or crashing the server."""
 import os
+import re
 import shutil
+import subprocess
+import sys
 import threading
 import time
 
@@ -53,7 +56,30 @@ def _ram_free_gb() -> float:
     return 99.0
 
 
+def _mac_cpu_percent() -> float:
+    """Read the last one-second CPU sample from macOS top."""
+    p = subprocess.run(["top", "-l", "2", "-n", "0", "-stats", "cpu"], capture_output=True,
+                       text=True, timeout=5, check=True)
+    samples = re.findall(r"CPU usage:\s*([\d.]+)% user,\s*([\d.]+)% sys,\s*([\d.]+)% idle", p.stdout)
+    if not samples:
+        raise RuntimeError("macOS did not report CPU usage")
+    user, system, _idle = map(float, samples[-1])
+    return min(100.0, max(0.0, user + system))
+
+
 def _watch():
+    if sys.platform == "darwin":
+        while True:
+            time.sleep(1)
+            try:
+                _state["cpu"] = 0.55 * _state["cpu"] + 0.45 * _mac_cpu_percent()
+                _state["ram_free"] = _ram_free_gb()
+                if time.time() - _state["at"] > 15:
+                    _state["disk_free"] = shutil.disk_usage(config.DATA_DIR).free / 1e9
+                    _state["at"] = time.time()
+            except Exception:  # noqa: BLE001
+                pass
+        return
     try:
         last = _cpu_times()
     except Exception:  # noqa: BLE001 - a system we cannot measure: behave as if there is always room

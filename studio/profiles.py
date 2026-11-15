@@ -4,12 +4,13 @@ YouTube and Twitch put the name and picture in the channel page's share tags (Yo
 count there); Kick has a public JSON endpoint with all three. Twitch does not show followers publicly, so that
 one comes back without a count. Everything here is best effort: a creator works the same without a profile."""
 import base64
+import html as html_lib
 import json
 import re
 import threading
 import time
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from . import creators, ctx
 
@@ -39,8 +40,19 @@ def _get(url: str, accept: str = "text/html", limit: int = 3_000_000):
 
 
 def _meta(html: str, prop: str):
-    m = re.search(r'<meta[^>]+(?:property|name)="%s"[^>]+content="([^"]*)"' % re.escape(prop), html)
-    return m.group(1).replace("&amp;", "&") if m else ""
+    for tag in re.finditer(r"<meta\b[^>]*>", html, re.I):
+        attrs = {name.lower(): html_lib.unescape(value) for name, _quote, value in
+                 re.findall(r"""([\w:-]+)\s*=\s*(["'])(.*?)\2""", tag.group(0), re.S)}
+        if attrs.get("property", "").lower() == prop.lower() or attrs.get("name", "").lower() == prop.lower():
+            return attrs.get("content", "")
+    return ""
+
+
+def _youtube_video(url: str) -> bool:
+    u = urlparse(url)
+    path = u.path.rstrip("/")
+    return (path == "/watch" and bool(parse_qs(u.query).get("v"))) or bool(
+        re.fullmatch(r"/(?:live|shorts|embed)/[\w-]{11}", path, re.I))
 
 
 def _picture(url: str):
@@ -73,8 +85,9 @@ def fetch(channel: str) -> dict:
     url = channel.strip()
     if "://" not in url:
         url = "https://" + url
-    url = re.sub(r"/(live|videos|streams|featured)/?$", "", url.split("?")[0].rstrip("/"))
     plat = platform_of(url)
+    if not (plat == "YouTube" and _youtube_video(url)):
+        url = re.sub(r"/(live|videos|streams|featured|about)/?$", "", url.split("?")[0].rstrip("/"))
     got = _cache.get(url)
     if got and time.time() - got[0] < (3600 if got[1] else 60):
         if got[1] is None:       # it failed a moment ago for someone: don't ask the platform again for every user
@@ -98,21 +111,38 @@ def _fetch(url: str, plat: str) -> dict:
         n = str(d.get("followers_count") or "").strip()  # Kick sends this as text
         out = {"platform": plat, "name": user.get("username") or slug,
                "followers": f"{_short(int(n))} followers" if n.isdigit() else "", "pic_url": user.get("profile_pic") or ""}
+    elif plat == "YouTube" and _youtube_video(url):
+        info = _ydl_info(url)
+        channel_url = str(info.get("channel_url") or info.get("uploader_url") or "").strip()
+        name = str(info.get("channel") or info.get("uploader") or "").strip()
+        if not channel_url or not name or platform_of(channel_url) != "YouTube":
+            raise ValueError("Couldn't identify the channel for that video. Paste the channel link instead.")
+        out = {"platform": plat, "name": name[:80], "followers": "",
+               "pic_url": "", "channel_url": channel_url.rstrip("/")}
     elif plat == "Twitch" and (tw := _twitch_profile(url)):
         out = tw
     elif plat in ("YouTube", "Twitch"):
         _, raw = _get(url)
         html = raw.decode("utf-8", "replace")
         name = _meta(html, "og:title")
+        channel_url = url.rstrip("/")
         if plat == "Twitch":
             name = re.sub(r"\s*-\s*(Live on )?Twitch\s*$", "", name)
+        elif not name or name.lower() == "youtube":
+            try:
+                info = _ydl_info(url)
+                name = str(info.get("channel") or info.get("uploader") or "").strip()
+                channel_url = str(info.get("channel_url") or info.get("uploader_url") or channel_url).rstrip("/")
+            except Exception:
+                pass
         if not name or name.lower() in ("youtube", "twitch"):
             raise ValueError("Couldn't find that channel. Check the link.")
         subs = ""
         if plat == "YouTube":
             m = re.search(r'"content":"([\d.,]+[KMB]?) subscribers"', html) or re.search(r'([\d.,]+[KMB]?) subscribers', html)
             subs = f"{m.group(1)} subscribers" if m else ""
-        out = {"platform": plat, "name": name[:80], "followers": subs, "pic_url": _meta(html, "og:image")}
+        out = {"platform": plat, "name": name[:80], "followers": subs, "pic_url": _meta(html, "og:image"),
+               "channel_url": channel_url}
     else:
         raise ValueError("Channel links must be from YouTube, Twitch or Kick.")
     try:
@@ -130,6 +160,7 @@ def preview(channel: str) -> dict:
     p = fetch(channel)
     pic = p.get("pic")
     return {"platform": p["platform"], "name": p["name"], "followers": p["followers"],
+            "channel": p.get("channel_url", ""),
             "pic": f"data:{pic[1]};base64," + base64.b64encode(pic[0]).decode() if pic else ""}
 
 

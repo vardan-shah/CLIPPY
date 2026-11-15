@@ -37,10 +37,18 @@ def _fix(c: dict) -> dict:
     c["channels"] = ch
     if not c.get("ai_every_min"):
         c["ai_every_min"] = 3       # "Auto" (0) is gone: jumps in loudness and chat are now always checked
+    try:
+        # Earlier Clippy builds changed the default from 60 to 40 seconds. Restore that default for existing workspaces,
+        # and keep every saved setting within the 60-second product limit.
+        if int(float(c.get("min_len", 15))) == 15 and int(float(c.get("max_len", 60))) == 40:
+            c["max_len"] = 60
+        c["max_len"] = max(10, min(60, int(float(c.get("max_len", 60)))))
+    except (TypeError, ValueError):
+        c["max_len"] = 60
     if c.get("channel") not in ch.values():
         c["channel"] = next((ch[k] for k in PLATFORMS if k in ch), "")
     return c
-NUMERIC = {"min_len": (5, 120), "max_len": (10, 180), "max_clips": (1, 20), "min_score": (0, 100), "buffer_min": (5, 120), "live_per_hour": (1, 60), "ai_every_min": (1, 30), "auto_jump_pct": (20, 300), "must_clip_min": (0, 240), "min_gap_min": (0, 60),
+NUMERIC = {"min_len": (5, 120), "max_len": (10, 60), "max_clips": (1, 20), "min_score": (0, 100), "buffer_min": (5, 120), "live_per_hour": (1, 60), "ai_every_min": (1, 30), "auto_jump_pct": (20, 300), "must_clip_min": (0, 240), "min_gap_min": (0, 60),
            "post_min_score": (0, 100), "post_gap_min": (5, 1440), "daily_cap": (1, 50)}
 
 

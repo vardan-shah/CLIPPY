@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import alerts, auth, brain, config, creators, ctx, jobs, load, media, transcribe, usage
+from . import alerts, auth, brain, config, creators, ctx, jobs, load, media, roman, transcribe, usage
 
 SESSIONS: dict = {}
 SEG_SEC = 6           # length of each buffer piece
@@ -177,7 +177,7 @@ class Session:
             with self.lock:
                 self.seg_clock = max(self.seg_clock, self.samples / SR)
             p = f"p{self.part:02d}"
-            cmd = ["ffmpeg", "-v", "error", "-reconnect", "1", "-reconnect_streamed", "1",
+            cmd = [config.FFMPEG, "-v", "error", "-reconnect", "1", "-reconnect_streamed", "1",
                    "-reconnect_delay_max", "10"]
             for u in info["urls"]:
                 cmd += ["-i", u]
@@ -472,7 +472,7 @@ class Session:
         lst.write_text("".join(f"file '{s[0].as_posix()}'\n" for s in segs), encoding="utf-8")
         src = self.dir / "clips" / f"{clip['id']}.src.ts"
         try:
-            media.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+            media.run([config.FFMPEG, "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
                        "-c", "copy", str(src)])
         except Exception as e:  # noqa: BLE001
             clip.update(status="error", error=media_safe(e))
@@ -528,7 +528,7 @@ class Session:
             self.job.update(
                 duration=elapsed,
                 live={"elapsed": round(elapsed), "buffer_sec": round(self.segments[-1][2] - self.segments[0][1]) if self.segments else 0,
-                      "lines": [l["text"] for l in lines], "level": [round(x) for x in self.db[-60:]],
+                      "lines": [roman.to_roman(l["text"]) for l in lines], "level": [round(x) for x in self.db[-60:]],
                       "chat": [self.chat.get(t, 0) for t in range(max(0, sec - 60), sec)] if self.chat_on or self.chat_total else None,
                       "checks": self.checks, "skipped": self.skipped, "tokens": self.tokens, "words": len(self.words),
                       "rejected": self.rejected, "verdicts": list(reversed(self.verdicts)),
@@ -650,7 +650,7 @@ def start_session(creator: dict, url=None) -> dict:
     if len(active_mine()) >= config.MAX_LIVE_PER_USER:
         raise ValueError("You're already recording a stream. Stop it before starting another.")
     if len(active()) >= config.MAX_LIVE_TOTAL or (active() and load.busy()):
-        raise ValueError("PeakCut is recording as many streams as it can right now. Try again in a little while.")
+        raise ValueError("Clippy is recording as many streams as it can right now. Try again in a little while.")
     job = jobs.create({"type": "live", "url": url, "name": f"{creator['name']} live"}, {}, enqueue=False,
                       creator=creator["id"], kind="live")
     job.update(status="live", stage="Connecting to the stream")

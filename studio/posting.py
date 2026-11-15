@@ -110,7 +110,7 @@ def _post(p):
         if acc["platform"] == "youtube":
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"])
         elif acc["platform"] == "instagram":
-            rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}")
+            rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         else:
             raise RuntimeError("That kind of account is no longer supported.")
         p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None)
@@ -236,7 +236,7 @@ def overview() -> dict:
 
 def digest_text() -> str:
     o = overview()
-    lines = ["PeakCut daily summary"]
+    lines = ["Clippy daily summary"]
     for r in o["creators"]:
         lines.append(f"- {r['name']}: {r['state']}, {r['clips_today']} clips today, {r['posted_today']} posted today, "
                      f"{r['queued']} waiting, {r['failed']} failed, {r['views']} views")

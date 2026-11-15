@@ -19,7 +19,7 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # minutes, with a clear message, instead of each one waiting to fail. Then the next link simply tries again.
 YT_PAUSE = 600
 _yt_refused_until = 0.0
-YT_BLOCKED = ("YouTube isn't letting PeakCut download videos right now. Upload the video file instead, or use a "
+YT_BLOCKED = ("YouTube isn't letting Clippy download videos right now. Upload the video file instead, or use a "
               "Twitch or Kick link. YouTube links will be tried again in a few minutes.")
 _BOT_CHECK = re.compile(r"not a bot|confirm you.?re not|sign in to confirm(?! your age)", re.I)
 
@@ -143,6 +143,26 @@ def youtube_words(url: str):
     return _caption_words(json.loads(raw)), key.replace("-orig", "")
 
 
+def youtube_english_words(url: str):
+    """YouTube's English captions of a video spoken in another language: ones a person wrote if there are any,
+    otherwise YouTube's own translation of its transcript. Word list like youtube_words, or None."""
+    if not is_youtube(url):
+        return None
+    import json
+    with _youtube_guard(url), _ydl({}) as ydl:
+        i = ydl.extract_info(url, download=False)
+        tracks = []
+        for group in (i.get("subtitles") or {}, i.get("automatic_captions") or {}):
+            for k in ("en", "en-US", "en-GB"):
+                tracks.append(next((f for f in group.get(k) or [] if f.get("ext") == "json3" and f.get("url")), None))
+        track = next((t for t in tracks if t), None)
+        if not track:
+            return None
+        raw = ydl.urlopen(track["url"]).read(40_000_000)
+    words = _caption_words(json.loads(raw))
+    return words or None
+
+
 def _caption_words(data: dict) -> list:
     out = []
     for ev in data.get("events") or []:
@@ -214,7 +234,7 @@ def save_thumb(job_dir: Path, url: str = "", video: Path = None) -> bool:
             return True
         if video:
             d = probe(video).get("duration") or 0
-            run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{min(3.0, d / 3):.2f}", "-i", str(video),
+            run([config.FFMPEG, "-y", "-loglevel", "error", "-ss", f"{min(3.0, d / 3):.2f}", "-i", str(video),
                  "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", str(out)])
             return out.is_file()
     except Exception:
@@ -268,7 +288,7 @@ def find_offset(full: np.ndarray, part: np.ndarray, expected: float, search=20.0
 
 
 def probe(path: Path) -> dict:
-    out = run(["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)])
+    out = run([config.FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)])
     data = json.loads(out)
     v = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
     if not v:
@@ -287,7 +307,7 @@ def probe(path: Path) -> dict:
 def extract_audio(src: Path, wav: Path):
     # first_pts=0 pads any gap before the audio starts, so second 0 of the wav is second 0 of the file
     # -t: never more audio than the longest video allowed, whatever the file claims about itself
-    run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000", "-t", str(int(config.MAX_VIDEO_HOURS * 3600) + 60),
+    run([config.FFMPEG, "-y", "-v", "error", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000", "-t", str(int(config.MAX_VIDEO_HOURS * 3600) + 60),
          "-af", "aresample=async=1:first_pts=0", "-c:a", "pcm_s16le", str(wav)])
 
 

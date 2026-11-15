@@ -1,5 +1,6 @@
-"""Talking to the AI service. You bring your own key, and choose the service and model in the dashboard
-(Settings, AI) or in .env. What is saved from the dashboard is kept in ai.json in the data folder and wins.
+"""Talking to the AI service. Ollama is the default, so it can run locally without API credits. You can choose
+another service and model in the dashboard (Settings, AI) or in .env. What is saved from the dashboard is kept in
+ai.json in the data folder and wins.
 
     PEAKCUT_AI_PROVIDER   gemini | openai | xai | groq | openrouter | anthropic | ollama | custom
     PEAKCUT_AI_MODELS     one or more model ids, comma separated, tried in this order
@@ -12,6 +13,7 @@ import json
 import os
 import re
 import threading
+import time
 
 import httpx
 
@@ -25,7 +27,7 @@ PROVIDERS = {
     "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "llama-3.3-70b-versatile"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1", "openai", "https://openrouter.ai/keys", "google/gemini-2.5-flash"),
     "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", ""),
-    "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "llama3.1"),
+    "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "qwen2.5:7b"),
     "custom": ("Custom (OpenAI-compatible)", "", "openai", "", ""),
 }
 ALIASES = {"google": "gemini", "grok": "xai", "claude": "anthropic", "local": "ollama"}
@@ -34,6 +36,7 @@ NO_KEY = {"ollama", "custom"}       # a model running on your own machine needs 
 # ---------------------------------------------------------------- the settings in use
 _lock = threading.Lock()
 _saved = {"at": None, "data": {}}
+_ollama_cache = {"key": None, "at": 0.0, "models": [], "error": ""}
 
 
 def _file():
@@ -71,7 +74,20 @@ def provider() -> str:
 
 
 def models() -> list:
-    return current()["models"]
+    c = current()
+    configured = c["models"]
+    if c["provider"] != "ollama":
+        return configured
+    installed, _error = _ollama_installed(c)
+    if not installed:
+        return configured
+    matched = [m for m in configured if m in installed]
+    if matched:
+        return matched
+    # Settings from older Clippy versions may name an Ollama model that was never installed. Use the preferred
+    # local model if it is present, otherwise use the first model Ollama actually has.
+    preferred = next((m for m in config.AI_MODELS if m in installed), None)
+    return [preferred or installed[0]]
 
 
 def key() -> str:
@@ -87,17 +103,48 @@ def base_url() -> str:
     return c["base_url"] or PROVIDERS.get(c["provider"], ("", ""))[1]
 
 
+def _ollama_installed(c=None) -> tuple[list, str]:
+    """Check what the local Ollama service can actually run, cached to keep status polling light."""
+    c = c or current()
+    base = (c["base_url"] or PROVIDERS["ollama"][1]).rstrip("/")
+    endpoint = base + "/models" if base.endswith("/v1") else base + "/v1/models"
+    key = (endpoint, c.get("key", ""))
+    now = time.time()
+    if _ollama_cache["key"] == key and now - _ollama_cache["at"] < 15:
+        return list(_ollama_cache["models"]), _ollama_cache["error"]
+    try:
+        headers = {"Authorization": f"Bearer {c['key']}"} if c.get("key") else {}
+        r = httpx.get(endpoint, headers=headers, timeout=httpx.Timeout(2, connect=0.5))
+        r.raise_for_status()
+        data = r.json()
+        found = sorted({str(m.get("id", "")).strip() for m in data.get("data", []) if isinstance(m, dict) and m.get("id")})
+        error = "" if found else "Ollama is running, but it has no models installed yet. In Terminal, run: ollama pull qwen2.5:7b"
+    except Exception as e:  # noqa: BLE001 - Ollama is local and optional; loudness fallback remains available
+        found = []
+        error = f"Ollama could not be reached: {str(e)[:180]}"
+    _ollama_cache.update(key=key, at=now, models=found, error=error)
+    return found, error
+
+
 def ready() -> bool:
     c = current()
-    return bool(c["provider"] in PROVIDERS and c["models"] and base_url() and (c["key"] or c["provider"] in NO_KEY))
+    return bool(c["provider"] in PROVIDERS and c["models"] and base_url()
+                and (c["key"] or c["provider"] in NO_KEY))
 
 
 def public() -> dict:
     """What the settings page may see. The key itself never leaves the server: only whether there is one, and
     its last four characters so the owner can tell which key it is."""
     c = current()
-    return {"provider": c["provider"], "models": c["models"], "base_url": c["base_url"], "has_key": bool(c["key"]),
-            "key_hint": c["key"][-4:] if len(c["key"]) >= 12 else "", "ready": ready(), "label": label(),
+    installed, error = _ollama_installed(c) if c["provider"] == "ollama" else ([], "")
+    configured = bool(c["provider"] in PROVIDERS and c["models"] and base_url()
+                      and (c["key"] or c["provider"] in NO_KEY))
+    current_models = models()
+    is_ready = configured and (bool(installed and current_models) if c["provider"] == "ollama" else True)
+    return {"provider": c["provider"], "models": current_models, "base_url": c["base_url"], "has_key": bool(c["key"]),
+            "key_hint": c["key"][-4:] if len(c["key"]) >= 12 else "", "ready": bool(is_ready),
+            "available": bool(installed) if c["provider"] == "ollama" else None, "message": error,
+            "label": label(),
             "saved_here": bool(_from_dashboard().get("provider")),
             "providers": [{"id": k, "label": v[0], "address": v[1], "needs_key": k not in NO_KEY, "key_url": v[3], "example": v[4]}
                           for k, v in PROVIDERS.items()]}
@@ -135,6 +182,7 @@ def save(provider_id: str, model_ids, address: str = "", new_key=None) -> dict:
             pass
         tmp.replace(f)
         _saved["at"] = None
+        _ollama_cache["at"] = 0
     return public()
 
 
@@ -169,7 +217,13 @@ def list_models(provider_id=None, address=None, with_key=None) -> list:
 def test() -> dict:
     """One tiny request with the settings in use, to prove the key, the address and the model all work."""
     ms = models()
-    if not ready():
+    if provider() == "ollama":
+        installed, error = _ollama_installed()
+        if not installed:
+            raise ValueError(error or "Ollama has no models installed yet. Pull a local model, then try again.")
+        if not models():
+            raise ValueError("Save a model name first.")
+    elif not ready():
         raise ValueError("Save a service, a model and a key first.")
     out, sent, wrote = call(ms[0], 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
     return {"ok": True, "model": ms[0], "tokens": sent + wrote, "answer": str(out)[:80]}

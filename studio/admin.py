@@ -86,7 +86,7 @@ def overview() -> dict:
                    "videos": len(all_jobs), "clips": sum(clips.values()), "recording": len(live.active()),
                    "working": sum(1 for j in all_jobs if j["status"] in ("queued", "running"))},
         "daily": list(daily.values()), "by_purpose": by_purpose, "users": users, "log": log,
-        "server": {"speech_model": transcribe.model_ready(), "ai_key": ai.ready(), "ai_provider": ai.label(),
+        "server": {"speech_model": transcribe.model_ready(), "ai_key": ai.public()["ready"], "ai_provider": ai.label(),
                    "ai_model": (ai.models() or [""])[0], "google": auth.google_ready(), "mail": mailer.ready(),
                    "free_gb": round(shutil.disk_usage(config.DATA_DIR).free / 1e9, 1),
                    "load": load.state(), "running": jobs.running_now(), "waiting": jobs.waiting_total(),
