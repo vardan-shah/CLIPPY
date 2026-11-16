@@ -51,6 +51,19 @@ posting._posts.extend([
     {"id": "post-b-1", "user": b.id, "status": "posted", "title": "Other user's clip"},
 ])
 posting._save()
+# A provider upload must finish before account deletion can remove its record.
+posting._posts[0]["status"] = "posting"
+posting._save()
+try:
+    account.delete_account(a.id)
+    ok = False
+except account.Busy:
+    ok = True
+check("account deletion is blocked while a provider post is in progress", ok)
+check("blocked deletion preserves the posting record",
+      any(p.get("id") == "post-a-1" and p.get("status") == "posting" for p in posting._posts))
+posting._posts[0]["status"] = "scheduled"
+posting._save()
 udir = config.user_dir(a.id)
 check("the account is deleted", account.delete_account(a.id)["ok"] and auth.get_user(a.id) is None and not udir.exists())
 check("account deletion removes its scheduled and completed post history",
