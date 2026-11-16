@@ -5,7 +5,7 @@ os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="pc-del-"); os.environ["DAT
 sys.path.insert(0, ".")
 from pathlib import Path
 import sqlalchemy as sa
-from studio import account, auth, config, creators, ctx, db, jobs
+from studio import account, auth, config, creators, ctx, db, jobs, posting
 db.init()
 fails = []
 def check(n, ok, x=""):
@@ -44,8 +44,19 @@ with ctx.as_user(a.id):
     except account.Busy: ok = True
     check("an account with a video in progress is not deleted", ok)
     j = jobs.get(j3["id"]); j["status"] = "done"; jobs.save(j)
+# Posting history is stored in a shared JSON file, not the user's data directory.
+posting._posts.extend([
+    {"id": "post-a-1", "user": a.id, "status": "scheduled", "title": "Private scheduled clip"},
+    {"id": "post-a-2", "user": a.id, "status": "posted", "title": "Private published clip"},
+    {"id": "post-b-1", "user": b.id, "status": "posted", "title": "Other user's clip"},
+])
+posting._save()
 udir = config.user_dir(a.id)
 check("the account is deleted", account.delete_account(a.id)["ok"] and auth.get_user(a.id) is None and not udir.exists())
+check("account deletion removes its scheduled and completed post history",
+      not any(p.get("user") == a.id for p in posting._posts))
+check("account deletion preserves another user's post history",
+      any(p.get("user") == b.id for p in posting._posts))
 with db.engine.connect() as cn:
     left = {t.name: cn.execute(sa.select(sa.func.count()).select_from(t).where(t.c.user_id == a.id)).scalar() for t in db.meta.sorted_tables if "user_id" in t.c}
 check("nothing of theirs is left in the database", not any(left.values()), str(left))

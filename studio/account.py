@@ -137,6 +137,11 @@ def delete_account(uid: str) -> dict:
         mine = jobs.list_jobs()
         if any(_busy(j) for j in mine):
             raise Busy("A video is still being made. Wait for it to finish, then delete the account.")
+        from . import posting
+        try:
+            posting.delete_user(uid)
+        except RuntimeError as e:
+            raise Busy(str(e)) from e
         for j in mine:
             jobs.delete(j["id"])
     with db.engine.begin() as c:

@@ -128,7 +128,16 @@ def _use_link(token: str, purpose: str) -> str:
             raise AuthError("That link has already been used or isn't valid. Ask for a new one.")
         if row.expires_at < time.time():
             raise AuthError("That link has expired. Ask for a new one.")
-        c.execute(db.email_tokens.update().where(db.email_tokens.c.token_hash == row.token_hash).values(used_at=time.time()))
+        # Claim the link with one conditional write. Concurrent requests may both read the
+        # unused row above, but only one can change used_at from NULL.
+        claimed = c.execute(db.email_tokens.update().where(
+            db.email_tokens.c.token_hash == row.token_hash,
+            db.email_tokens.c.purpose == purpose,
+            db.email_tokens.c.used_at.is_(None),
+            db.email_tokens.c.expires_at >= time.time()
+        ).values(used_at=time.time()))
+        if claimed.rowcount != 1:
+            raise AuthError("That link has already been used or isn't valid. Ask for a new one.")
     return row.user_id
 
 

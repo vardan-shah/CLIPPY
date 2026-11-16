@@ -122,7 +122,13 @@ def clean_options(options) -> dict:
             continue
         if k in LIMITS:
             lo, hi = LIMITS[k]
-            v = max(lo, min(hi, int(float(v))))
+            try:
+                number = float(v)
+                if not math.isfinite(number):
+                    raise ValueError
+                v = max(lo, min(hi, int(number)))
+            except (TypeError, ValueError, OverflowError) as e:
+                raise ValueError(f"{k.replace('_', ' ').capitalize()} must be a finite number.") from e
         elif k == "style":
             v = v if v in render.STYLES else DEFAULTS["style"]
         elif k == "layout":

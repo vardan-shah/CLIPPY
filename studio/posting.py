@@ -29,6 +29,17 @@ def _save():
         tmp.replace(_FILE)
 
 
+def delete_user(uid: str) -> int:
+    """Remove a user's post history. Refuse while a provider upload is in progress."""
+    with _lock:
+        if any(p.get("user") == uid and p.get("status") == "posting" for p in _posts):
+            raise RuntimeError("A post is still being uploaded. Wait for it to finish, then delete the account.")
+        before = len(_posts)
+        _posts[:] = [p for p in _posts if p.get("user") != uid]
+        _save()
+        return before - len(_posts)
+
+
 def _day(t):
     return time.strftime("%Y-%m-%d", time.localtime(t))
 

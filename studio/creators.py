@@ -1,6 +1,7 @@
 """Creator workspaces. Each user has their own: users/<user>/creators/<id>/{videos,live,creator.json,log.jsonl}."""
 import copy
 import json
+import math
 import re
 import threading
 import time
@@ -42,8 +43,11 @@ def _fix(c: dict) -> dict:
         # and keep every saved setting within the 60-second product limit.
         if int(float(c.get("min_len", 15))) == 15 and int(float(c.get("max_len", 60))) == 40:
             c["max_len"] = 60
-        c["max_len"] = max(10, min(60, int(float(c.get("max_len", 60)))))
-    except (TypeError, ValueError):
+        max_len = float(c.get("max_len", 60))
+        if not math.isfinite(max_len):
+            raise ValueError("max_len must be finite")
+        c["max_len"] = max(10, min(60, int(max_len)))
+    except (TypeError, ValueError, OverflowError):
         c["max_len"] = 60
     if c.get("channel") not in ch.values():
         c["channel"] = next((ch[k] for k in PLATFORMS if k in ch), "")
@@ -66,15 +70,28 @@ def _clean(data: dict) -> dict:
         v = data[k]
         if k in NUMERIC:
             lo, hi = NUMERIC[k]
-            v = max(lo, min(hi, int(float(v))))
+            try:
+                number = float(v)
+                if not math.isfinite(number):
+                    raise ValueError
+                v = max(lo, min(hi, int(number)))
+            except (TypeError, ValueError, OverflowError) as e:
+                raise ValueError(f"{k.replace('_', ' ').capitalize()} must be a finite number.") from e
         elif k in ("auto_watch", "autopost", "ai_only_on_spike"):
-            v = bool(v)
+            if not isinstance(v, bool):
+                raise ValueError(f"{k.replace('_', ' ').capitalize()} must be true or false.")
         elif k == "channels":
             v = {p: str(u).strip()[:300] for p, u in (v.items() if isinstance(v, dict) else []) if p in PLATFORMS and str(u).strip()}
         elif k == "accounts":
             v = [str(x) for x in v][:20] if isinstance(v, list) else []
         elif k == "rate_per_1k":
-            v = max(0.0, min(1000.0, float(v or 0)))
+            try:
+                number = float(v or 0)
+                if not math.isfinite(number):
+                    raise ValueError
+                v = max(0.0, min(1000.0, number))
+            except (TypeError, ValueError, OverflowError) as e:
+                raise ValueError("Rate per 1,000 views must be a finite number.") from e
         elif k == "plan":
             v = v if v in ("free", "pro", "max") else "free"
         elif k == "decide_mode":
