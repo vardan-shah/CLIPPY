@@ -65,7 +65,14 @@ check("it is kept in the data folder", json.loads((config.DATA_DIR / "ai.json").
 r = put({"provider": "gemini", "models": "model-c", "key": ""})
 check("saving again without typing the key keeps it", (r.status_code, r.json()["has_key"], ai.key()), (200, True, KEY))
 check("changing service without a key is refused, and the old key is not carried over", put({"provider": "openai", "models": "m"}).status_code, 400)
-r = put({"provider": "ollama", "models": "llama"})
+# The CI runner does not have an Ollama daemon. Stub model discovery so this
+# test checks the dashboard's no-key configuration without depending on a local service.
+_ollama_installed = ai._ollama_installed
+ai._ollama_installed = lambda c=None: (["llama"], "")
+try:
+    r = put({"provider": "ollama", "models": "llama"})
+finally:
+    ai._ollama_installed = _ollama_installed
 check("a model on this machine needs no key", (r.status_code, r.json()["ready"], ai.key()), (200, True, ""))
 
 

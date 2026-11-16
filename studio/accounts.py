@@ -248,9 +248,14 @@ def save_settings(patch: dict) -> dict:
             if k not in SETTING_DEFAULTS:
                 continue
             if k in ("paused", "tour_done"):
-                v = bool(v)
+                if not isinstance(v, bool):
+                    raise ValueError(f"{k.replace('_', ' ').capitalize()} must be true or false.")
             elif k == "digest_hour":
-                v = max(0, min(23, int(v)))
+                try:
+                    v = int(v)
+                except (TypeError, ValueError, OverflowError) as e:
+                    raise ValueError("Digest hour must be a whole number from 0 to 23.") from e
+                v = max(0, min(23, v))
             else:
                 v = str(v).strip()[:300]
                 if k == "discord_webhook" and v and not v.startswith("https://discord.com/api/webhooks/"):
