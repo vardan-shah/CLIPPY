@@ -47,3 +47,20 @@ A short map for contributors and AI coding assistants.
 - **Pages** are plain HTML, CSS and JavaScript. Keep the existing palette, no shadows, and hover states that
   change colour only.
 - Comments and messages are written in plain language for people who do not program. Keep that tone.
+
+## Ponytail: minimal, correct changes
+
+Apply the Ponytail ruleset (MIT, DietrichGebert/ponytail) to coding work in this repository.
+
+- Read the relevant implementation and its callers before changing code. Prefer the smallest complete change that fits the existing architecture.
+- First reuse existing helpers, patterns, standard-library features, platform capabilities and installed dependencies. Do not add dependencies, wrappers, abstractions, configuration or speculative options without a concrete need.
+- Remove genuinely redundant code instead of layering another helper on top. Do not equate short code with correct code: preserve readability and edge-case behavior.
+- Never remove input validation, authorization, security controls, accessibility, meaningful error handling, data-loss safeguards or user-requested functionality to reduce line count.
+- For non-trivial new logic (branches, loops, parsing, money, security, or a new script), add a focused test. Keep the existing test conventions.
+- For bug fixes, inspect all callers and fix the shared root cause where possible. Update affected tests and fixtures.
+- When reviewing, inspect related code beyond the diff. Report concrete findings with file/line, impact, evidence and a minimal fix. Do not label code "AI-generated" based on style or heuristics.
+- Do not automatically delete code based on speculative cleanup findings. Make changes only when behavior is understood and tests or other evidence support the change.
+- Before finishing, run `python tests/run.py` for changes affecting `studio/`; run relevant checks for other changes. State exactly what was and was not tested, and identify remaining risks.
+- Keep changes within the requested scope. Prefer deletion when it demonstrably preserves behavior.
+
+Ponytail reference: https://github.com/DietrichGebert/ponytail
