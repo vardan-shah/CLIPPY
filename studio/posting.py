@@ -149,7 +149,9 @@ def _run():
                     if accounts.settings()["paused"]:
                         continue
                     with _lock:
-                        if p["status"] != "scheduled":
+                        # The due list is a snapshot. Account deletion may have removed this
+                        # record while the worker was waiting to acquire the lock.
+                        if p not in _posts or p["status"] != "scheduled":
                             continue
                         p["status"] = "posting"
                     _post(p)
