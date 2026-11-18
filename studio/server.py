@@ -714,20 +714,30 @@ def create_from_link(body: dict = Body(...)):
     url = media.clean_url(body.get("url", ""))[:500]
     if not media.site_allowed(url):
         raise HTTPException(400, "Paste a full link to a YouTube, Twitch or Kick video.")
+    creator = str(body.get("creator") or "") or None
+    if creator and not creators.get(creator):
+        raise HTTPException(404, "No such creator")
+    seen = media._PREVIEWS.get(url)  # the preview tells us whether this is a live stream
+    if seen and seen.get("is_live"):
+        if not creator:
+            raise HTTPException(400, "This link is a live stream. Select a creator workspace to record it.")
+        active = live.active_for(creator)
+        if active:
+            return jobs.public(active.job)
+        try:
+            return jobs.public(live.start_session(creators.get(creator), url))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     try:
         media.check_youtube(url)          # YouTube is refusing us right now: say so, rather than queue a job that fails
     except media.YouTubeBlocked as e:
         raise HTTPException(503, str(e))
-    creator = str(body.get("creator") or "") or None
-    if creator and not creators.get(creator):
-        raise HTTPException(404, "No such creator")
     try:
         with _create_lock:
             _job_slots()
             job = jobs.create({"type": "url", "url": url, "name": url}, body.get("options") or {}, creator=creator)
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e) if isinstance(e, ValueError) else "Those options aren't valid.")
-    seen = media._PREVIEWS.get(url)  # already looked up while the user was typing: show it straight away
     if seen:
         job.update(title=seen["title"], uploader=seen["uploader"], duration=seen["duration"])
         if media.save_thumb(jobs.job_dir(job["id"]), url=url):

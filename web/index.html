@@ -1663,11 +1663,15 @@ async function makeClips() {
     return;
   }
   A.busy = true; drawAtt();
-  let started = 0, failed = 0;
+  let started = 0, liveStarted = 0, failed = 0;
   const who = targetCreator(), opts = jobOptions();
   for (const l of A.links.filter(x => x.state === "ok")) {
     l.sending = true; drawAtt();
-    try { await send("/api/jobs", {url: l.url, options: opts, creator: who}); l.state = "done"; started++; }
+    try {
+      const job = await send("/api/jobs", {url: l.url, options: opts, creator: who});
+      l.state = "done"; started++;
+      if (job.kind === "live") liveStarted++;
+    }
     catch (e) { l.state = "bad"; l.msg = e.message; failed++; }
     l.sending = false; drawAtt();
   }
@@ -1681,7 +1685,10 @@ async function makeClips() {
   A.files = A.files.filter(f => { if (f.state === "done") { URL.revokeObjectURL(f.src); return false; } return true; });
   A.busy = false; drawAtt();
   if (started) {
-    toast(`${started === 1 ? "Your video is" : started + " videos are"} being clipped now.`, "ok");
+    const messages = [];
+    if (liveStarted) messages.push(`${liveStarted === 1 ? "Live stream is" : liveStarted + " live streams are"} recording. Clippy will keep making clips and finish a final review when the stream ends.`);
+    if (started > liveStarted) messages.push(`${started - liveStarted === 1 ? "Your video is" : started - liveStarted + " videos are"} being clipped now.`);
+    toast(messages.join(" "), "ok");
     if (!failed && S.view === "overview") go(who ? "c:" + who : "library"); else tick();
   } else if (failed) toast("Nothing was started. The reason is shown on the video.", "bad");
 }

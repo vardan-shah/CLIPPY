@@ -117,7 +117,7 @@ class Session:
         self.ended = False            # recording has stopped (stream over, stopped, or failed)
         self.finished = False         # everything is wrapped up
         self.end_note = "Stream ended"
-        self.user_stopped = False     # Stop pressed: wrap up at once, no last AI check
+        self.user_stopped = False     # Stop pressed: finish transcription and make one final AI check
         self.proc = None
         self.pending = bytearray()    # audio received but not yet transcribed
         self.clock_fix = 0.0          # how far the video-piece clock is behind the audio clock, last measured
@@ -221,8 +221,7 @@ class Session:
             threading.Thread(target=ctx.bind(self._chat), args=(m.group(1).lower(),), daemon=True).start()
 
     def stop(self, note="Stopped by you"):
-        """Instant for the user: the card and the creator show as stopped straight away. Clips already being made
-        still finish in the background, but nothing new is transcribed or sent to the AI."""
+        """Stop capture now, finish transcribing its buffer, then make a final AI check before cleanup."""
         self.end_note = note
         self.user_stopped = True
         self.stop_flag.set()
@@ -262,10 +261,11 @@ class Session:
             with self.lock:
                 self.seg_clock = max(self.seg_clock, self.samples / SR)
             p = f"p{self.part:02d}"
-            cmd = [config.FFMPEG, "-v", "error", "-reconnect", "1", "-reconnect_streamed", "1",
-                   "-reconnect_delay_max", "10"]
+            cmd = [config.FFMPEG, "-v", "error"]
             for u in info["urls"]:
-                cmd += ["-i", u]
+                cmd += ["-rw_timeout", "20000000", "-reconnect", "1", "-reconnect_streamed", "1",
+                        "-reconnect_on_network_error", "1", "-reconnect_max_retries", "3",
+                        "-reconnect_delay_max", "5", "-allowed_extensions", "ALL", "-i", u]
             a_in = "1:a:0" if len(info["urls"]) > 1 else "0:a:0"
             cmd += ["-map", "0:v:0", "-map", a_in, "-c", "copy", "-f", "segment", "-segment_time", str(SEG_SEC),
                     "-reset_timestamps", "1", "-segment_format", "mpegts", "-segment_list", f"{p}.csv",
@@ -694,7 +694,8 @@ class Session:
                 self._watch_spikes()
                 sp, said = self.spike, self.said
                 if self.user_stopped:
-                    pass
+                    if self.ended and not busy and self.t_done > self.last_check:
+                        self._ask_ai()
                 elif said and (self.t_done >= said["t"] + self.SAID_AFTER or (self.ended and not busy)):
                     self.said = None
                     self._ask_ai((said["t"] - self.SAID_BEFORE, said["t"] + self.SAID_AFTER), said["why"])
@@ -710,9 +711,8 @@ class Session:
             # clip, and cleanup() deletes the buffer that clip is cut from. That is true after a stop as
             # well as at the end of a stream, so both wait for it. Stopping is still instant on the page:
             # stop() has already written the status.
-            if ((self.user_stopped and not self.manual and not self.ai_busy)
-                    or (self.ended and not busy and not self.ai_busy
-                        and len(self.pending) < SR * 2 and not self.manual)):
+            if (self.ended and not busy and not self.ai_busy
+                    and len(self.pending) < SR * 2 and not self.manual):
                 break
             if not busy:
                 time.sleep(2)
