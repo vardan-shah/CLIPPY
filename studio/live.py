@@ -11,7 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-from . import alerts, auth, brain, config, creators, ctx, jobs, load, media, roman, transcribe, usage
+from . import alerts, auth, brain, config, creators, ctx, facecam, games, jobs, load, media, transcribe, usage
+
+# ":username!user@host PRIVMSG #channel :the message"
+_NICK = re.compile(r"(?m)^:([A-Za-z0-9_]{2,25})!")
 
 SESSIONS: dict = {}
 SEG_SEC = 6           # length of each buffer piece
@@ -19,11 +22,24 @@ PAD = 8               # seconds kept either side of a clip so it can be re-trimm
 CHECK_EVERY = 180     # look at the stream every 3 minutes...
 QUIET_MAX = 600       # ...but only ask the AI when something happened, or at most every 10 minutes when calm
 WINDOW = 240          # seconds of transcript shown to the AI per check
+CHAT_KEEP = 600       # seconds of chat names kept: only the last few minutes are ever read
 SR = 16000
 
 
 class NotLive(Exception):
     pass
+
+
+def _trim_names(users: dict, second: int, kept: int) -> int:
+    """Drop the chat names older than CHAT_KEEP, and say when this was last done.
+
+    Only the last few minutes are ever read, and a stream that runs for eight hours would otherwise hold
+    a name for every second of it. Called under the session's lock, from the chat reader thread."""
+    if second - kept < 60:
+        return kept              # walking the whole dict on every message would cost more than it saves
+    for t in [t for t in users if t < second - CHAT_KEEP]:
+        del users[t]
+    return second
 
 
 def media_safe(e) -> str:
@@ -115,6 +131,8 @@ class Session:
         self.csv_seen = {}
         self.part = 0
         self.chat = collections.Counter()   # second -> messages
+        self.chat_users = {}                 # second -> the people who talked, when it can be told
+        self.chat_kept = 0                   # the second this was last pruned at
         self.chat_total = 0
         self.chat_on = False
         self.last_check = 0.0
@@ -135,6 +153,63 @@ class Session:
         self.last_spike = -999.0      # when the last jump was sent to the AI (stream seconds)
         self.base = {}                # running averages the jumps are measured against, shown on the card
         self.spikes = 0
+        self.game = ""                # which game this stream is, when it can be told
+        self.facecam_box = None       # where the webcam is, found once the first clip is made
+        self.facecam_checked = False  # the look is made once, even when it finds nothing
+        self.ai_busy = 0.0            # when the AI check now running was started, 0 when none is
+
+    def _ask_ai(self, window=None, why=None):
+        """Ask the AI on its own thread, so a slow answer never stops the recording.
+
+        While the AI thinks, the speech keeps being written and a "clip that" still works. One check
+        runs at a time; if the running one is stuck far past its own timeout, a new one is let through.
+        """
+        now = time.time()
+        if self.ai_busy and now - self.ai_busy < config.LIVE_AI_TIMEOUT + 60:
+            return
+
+        def work():
+            try:
+                self._ai_check(window, why)
+            except Exception as e:  # noqa: BLE001
+                self.job["ai"]["last_error"] = str(e)[-200:]
+            finally:
+                self.ai_busy = 0.0
+        self.ai_busy = now
+        threading.Thread(target=ctx.bind(work), daemon=True, name="ai_check").start()
+
+    def _find_facecam(self, src):
+        """Where the webcam is in the stream, once. Only a sure answer is used.
+
+        One frame goes to the AI as well, and whatever it says is measured again on the
+        picture. A stream where the webcam is a square picture along the right edge, or
+        one where there is no webcam at all and the game has panels of its own, is told
+        apart from a real camera by what moves: a person sits still, the game does not."""
+        try:
+            box = facecam.detect(src, ask=brain.look_for_facecam)
+        except Exception:  # noqa: BLE001 - a missing facecam is not a failure
+            return None
+        if not box or box.get("conf") != "high":
+            return None
+        self.job["facecam"] = [box["x"], box["y"], box["w"], box["h"]]
+        return self.job["facecam"]
+
+    # ---------------------------------------------------------------- the game this stream is
+    def _game(self):
+        """The game, from what the creator set or from what the stream's title says.
+
+        The stream title is the best place to look: on launch night it says the game."""
+        if self.game:
+            return self.game
+        found = games.detect(self.settings.get("game"), self.job.get("title"), self.job.get("uploader"),
+                             self.job.get("source", {}).get("name"))
+        self.game = found[0] or ""
+        if self.game:
+            try:
+                self.job["game"] = self.game
+            except Exception:  # noqa: BLE001
+                pass
+        return self.game
 
     # ---------------------------------------------------------------- recording
     def start(self):
@@ -158,6 +233,16 @@ class Session:
             self.proc.terminate()
 
     def _ingest(self):
+        """Record the stream. However this ends, even when ffmpeg cannot start at all, the session is marked as
+        ended, so it stops showing as recording and gives its place to the next one."""
+        try:
+            self._ingest_loop()
+        except Exception as e:  # noqa: BLE001
+            self.job["error"] = f"Recording stopped: {media_safe(e)}"
+        finally:
+            self.ended = True
+
+    def _ingest_loop(self):
         fails = 0
         url = self.job["source"]["url"]
         while not self.stop_flag.is_set():
@@ -252,8 +337,15 @@ class Session:
                             s.sendall(b"PONG :tmi.twitch.tv\r\n")
                         elif b" PRIVMSG #" in line:
                             with self.lock:
-                                self.chat[int(self.samples / SR)] += 1
+                                second = int(self.samples / SR)
+                                self.chat[second] += 1
                                 self.chat_total += 1
+                                # how many different people, not how many messages: a wave of the same
+                                # emotes is not a crowd getting excited
+                                who = _NICK.findall(line.decode("utf-8", "replace"))
+                                if who:
+                                    self.chat_users.setdefault(second, set()).add(who[0].lower())
+                                    self.chat_kept = _trim_names(self.chat_users, second, self.chat_kept)
                 s.close()
             except Exception:  # noqa: BLE001
                 pass
@@ -261,14 +353,31 @@ class Session:
             self.stop_flag.wait(5)
 
     def _chat_spike(self, s, e):
-        """True if chat was at least 3x busier than usual during (and just after) these seconds."""
+        """True if chat was at least 3x busier than usual during (and just after) these seconds.
+
+        The crowd is counted as people, not messages: ten people saying "GG" is a reaction, one
+        person saying "GG" ten times is a bot."""
         elapsed = self.samples / SR
         if not self.chat_total or elapsed < 60:
             return False
         avg = self.chat_total / elapsed
         a, b = int(s), int(e) + 6
         rate = sum(self.chat.get(t, 0) for t in range(a, b + 1)) / (b - a + 1)
-        return rate > max(3 * avg, 1.0)
+        if rate <= max(3 * avg, 1.0):
+            return False
+        people = self.chat_people()
+        if not people:
+            return True
+        p_avg = sum(len(v) for v in people.values()) / max(1, len(people))
+        p_rate = sum(len(people.get(t, ())) for t in range(a, b + 1)) / (b - a + 1)
+        return p_rate >= max(2.0, 1.5 * p_avg)
+
+    def chat_people(self):
+        """Second -> how many different people were talking, where that is known.
+
+        A copy is taken under the lock: the chat reader thread adds to it as it goes."""
+        with self.lock:
+            return {t: set(names) for t, names in self.chat_users.items()}
 
     # ---------------------------------------------------------------- analysis
     def _transcribe_step(self):
@@ -309,7 +418,11 @@ class Session:
                 self.base = {"warming": True}
                 return
             db = np.array(self.db[max(0, n - 190):], dtype=np.float32)
-            chat = [self.chat.get(t, 0) for t in range(max(0, n - 190), n)] if (self.chat_on or self.chat_total) else None
+            people = self.chat_people()
+            if people:
+                chat = [len(people.get(t, ())) for t in range(max(0, n - 190), n)]
+            else:
+                chat = [self.chat.get(t, 0) for t in range(max(0, n - 190), n)] if (self.chat_on or self.chat_total) else None
         amp = 10 ** (db / 20)                       # loudness as plain level, so a percentage means something
         base, cur = float(amp[:-10].mean()), float(amp[-5:].mean())
         loud_jump = cur / max(base, 1e-6) - 1
@@ -357,7 +470,8 @@ class Session:
         title, up = self.job["title"], self.job["uploader"]
         try:
             cands, tok = brain.judge_transcript(win, ws, now, title, up, st["min_len"], st["max_len"], self.job["clips"],
-                                                n=1 if every <= 2 else 2, must=must)  # Auto (0) asks for one
+                                                n=1 if every <= 2 else 2, must=must, game=self._game(),
+                                                timeout=config.LIVE_AI_TIMEOUT)  # Auto (0) asks for one
         except Exception as e:  # noqa: BLE001
             self.job["ai"]["last_error"] = str(e)[-200:]
             return self._verdict(verdict, "AI error: " + str(e)[-80:])
@@ -369,9 +483,15 @@ class Session:
             return self._verdict(verdict, "Words judge: nothing clip-worthy")
         z = brain.loud_zscore(np.array(self.db, dtype=np.float32))
         lo, hi = int(ws), int(now) + 1
-        chat = [self.chat.get(t, 0) for t in range(lo, hi)] if (self.chat_on or self.chat_total) else None
+        people = self.chat_people()
+        if people:
+            chat = [len(people.get(t, ())) for t in range(lo, hi)]
+            unit = "people"
+        else:
+            chat = [self.chat.get(t, 0) for t in range(lo, hi)] if (self.chat_on or self.chat_total) else None
+            unit = "messages"
         try:
-            sig, tok2 = brain.judge_signals(z[lo:hi], chat, lo, now)
+            sig, tok2 = brain.judge_signals(z[lo:hi], chat, lo, now, unit=unit, timeout=config.LIVE_AI_TIMEOUT)
             self.checks += 1
             self.tokens += tok2
         except Exception as e:  # noqa: BLE001
@@ -433,10 +553,17 @@ class Session:
 
     def _manual_step(self):
         for req in [m for m in self.manual if m["end"] <= self.t_done or self.ended]:
-            self.manual.remove(req)
             text = " ".join(w["w"] for w in self.words if req["start"] <= w["s"] <= req["end"])
             usage.set_context(self.job["creator"], self.job["title"] or "Live stream")
-            c = brain.describe(text, self.job["title"], self.job["uploader"])
+            try:
+                c = brain.describe(text, self.job["title"], self.job["uploader"], game=self._game(),
+                                   timeout=config.LIVE_AI_TIMEOUT)
+            except Exception as e:  # noqa: BLE001
+                # Someone asked for this clip by hand. A slow or broken AI costs it its hook, not the clip.
+                self.job["ai"]["last_error"] = str(e)[-200:]
+                c = {"score": 0, "category": "other", "hook": "", "title": self.job["title"],
+                     "description": "", "hashtags": [], "highlight_words": []}
+            self.manual.remove(req)
             c.update(start=round(req["start"], 2), end=round(min(req["end"], self.samples / SR), 2), score=0)
             if req.get("why"):
                 c["reason"] = req["why"]
@@ -445,7 +572,7 @@ class Session:
     def _add_clip(self, c):
         self.n += 1
         c.update(id=f"clip{self.n:03d}", style=self.settings["style"], layout=self.settings["layout"],
-                 status="queued", version=0, made_at=time.time())
+                 captions=self.job["options"].get("captions", True), status="queued", version=0, made_at=time.time())
         with self.lock:
             self.job["clips"].append(c)
         jobs.save(self.job)
@@ -480,6 +607,14 @@ class Session:
             return
         finally:
             lst.unlink(missing_ok=True)
+        # Only the gameplay layout uses a webcam, and only once the clip's own file is written: the
+        # webcam is looked for in it, once per stream.
+        if clip.get("layout") == "gameplay":
+            if not self.facecam_checked:
+                self.facecam_box = self._find_facecam(src)
+                self.facecam_checked = True
+            if self.facecam_box:
+                clip["facecam"] = self.facecam_box
         dur = segs[-1][2] - segs[0][1]
         offset = self._align(src, segs[0][1] + self.clock_fix, dur)
         self.clock_fix = offset - segs[0][1]  # the two clocks drift ~4 s an hour; start the next clip from here
@@ -562,16 +697,22 @@ class Session:
                     pass
                 elif said and (self.t_done >= said["t"] + self.SAID_AFTER or (self.ended and not busy)):
                     self.said = None
-                    self._ai_check((said["t"] - self.SAID_BEFORE, said["t"] + self.SAID_AFTER), said["why"])
+                    self._ask_ai((said["t"] - self.SAID_BEFORE, said["t"] + self.SAID_AFTER), said["why"])
                 elif sp and (self.t_done >= sp["t"] + self.AUTO_AFTER or (self.ended and not busy)):
                     self.spike = None
-                    self._ai_check((sp["t"] - self.AUTO_BEFORE, sp["t"] + self.AUTO_AFTER), "Jump: " + sp["why"])
+                    self._ask_ai((sp["t"] - self.AUTO_BEFORE, sp["t"] + self.AUTO_AFTER), "Jump: " + sp["why"])
                 elif self.t_done - self.last_check >= every * 60 or (self.ended and not busy and self.t_done > self.last_check):
-                    self._ai_check()
+                    self._ask_ai()
                 self._publish()
             except Exception as e:  # noqa: BLE001
                 self.job["ai"]["last_error"] = str(e)[-200:]
-            if (self.user_stopped and not self.manual) or (self.ended and not busy and len(self.pending) < SR * 2 and not self.manual):
+            # Leaving here must not happen while an AI check is still running: it may still be adding a
+            # clip, and cleanup() deletes the buffer that clip is cut from. That is true after a stop as
+            # well as at the end of a stream, so both wait for it. Stopping is still instant on the page:
+            # stop() has already written the status.
+            if ((self.user_stopped and not self.manual and not self.ai_busy)
+                    or (self.ended and not busy and not self.ai_busy
+                        and len(self.pending) < SR * 2 and not self.manual)):
                 break
             if not busy:
                 time.sleep(2)
@@ -648,9 +789,12 @@ def start_session(creator: dict, url=None) -> dict:
                          .replace("Upload the video file instead, or use a Twitch or Kick link. YouTube links",
                                   "Twitch and Kick streams still work. YouTube"))
     if len(active_mine()) >= config.MAX_LIVE_PER_USER:
-        raise ValueError("You're already recording a stream. Stop it before starting another.")
+        raise ValueError(f"You're already recording {len(active_mine())} streams, the most this server allows at once. Stop one first.")
     if len(active()) >= config.MAX_LIVE_TOTAL or (active() and load.busy()):
-        raise ValueError("Clippy is recording as many streams as it can right now. Try again in a little while.")
+        raise ValueError("PeakCut is recording as many streams as it can right now. Try again in a little while.")
+    from . import tools
+    if tools.missing():
+        raise ValueError(tools.HELP)
     job = jobs.create({"type": "live", "url": url, "name": f"{creator['name']} live"}, {}, enqueue=False,
                       creator=creator["id"], kind="live")
     job.update(status="live", stage="Connecting to the stream")

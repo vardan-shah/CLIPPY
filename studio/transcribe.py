@@ -38,20 +38,8 @@ _remote_down_until = 0.0
 
 
 def model_ready() -> bool:
-    if config.ASR_MODEL_TYPE == "faster_whisper":
-        return all((config.ASR_MODEL_DIR / name).is_file() for name in ("model.bin", "config.json", "tokenizer.json"))
-    try:
-        if config.ASR_MODEL_TYPE == "whisper":
-            files = _whisper_files(config.ASR_MODEL_DIR)
-            if not Path(files["tokens"]).is_file():
-                return False
-        else:
-            if not (config.ASR_MODEL_DIR / "tokens.txt").is_file():
-                return False
-            _model_files(config.ASR_MODEL_DIR)
-        return True
-    except FileNotFoundError:
-        return False
+    from . import fetch_model
+    return fetch_model.ready()
 
 
 def _model_files(d) -> dict:
@@ -64,18 +52,85 @@ def _model_files(d) -> dict:
     raise FileNotFoundError(f"No speech model files in {d}")
 
 
-def _whisper_files(d) -> dict:
-    """Find the compact Whisper files; release folders name them after the model size."""
-    size = config.ASR_MODEL_NAME.removeprefix("sherpa-onnx-whisper-")
-    for suffix in ("int8", "", "fp16"):
-        tail = f".{suffix}" if suffix else ""
-        names = {part: d / f"{size}-{part}{tail}.onnx" for part in ("encoder", "decoder")}
-        if all(f.is_file() for f in names.values()):
-            return {**{part: str(f) for part, f in names.items()}, "tokens": str(d / f"{size}-tokens.txt")}
-    raise FileNotFoundError(f"No Whisper model files in {d}")
+_lib = {"mod": None}
+_lib_lock = threading.Lock()
+
+
+def _sherpa():
+    """The speech library, loaded once. Several copies of the model start on parallel threads, so loading is done
+    under a lock: two threads loading it at the same moment would trip over each other."""
+    with _lib_lock:
+        if _lib["mod"] is None:
+            _lib["mod"] = _load_sherpa()
+        return _lib["mod"]
+
+
+def _load_sherpa():
+    """On Windows a file whose full path is over 260 characters cannot be loaded, which happens when PeakCut sits in a
+    deep folder ("DLL load failed ... The filename or extension is too long"). Then the library is loaded through
+    the folder's short name (C:\\Users\\...\\SITE-P~1), which points at the same files, or else from a copy of it
+    in a short folder (AppData\\Local\\PeakCut\\lib), made once."""
+    import sys
+    try:
+        import sherpa_onnx
+        return sherpa_onnx
+    except ImportError as e:
+        if os.name != "nt" or "too long" not in str(e).lower():
+            raise
+        first = e
+    import ctypes
+    import importlib
+    import importlib.util
+    import shutil
+    from pathlib import Path
+
+    def forget():
+        for k in [m for m in sys.modules if m == "sherpa_onnx" or m.startswith("sherpa_onnx.")]:
+            del sys.modules[k]
+        importlib.invalidate_caches()
+
+    def load_from(folder: str):
+        forget()
+        sys.path.insert(0, folder)          # stays first: later imports inside the library look here too
+        try:
+            return importlib.import_module("sherpa_onnx")
+        except ImportError:
+            sys.path.remove(folder)
+            forget()
+            return None
+
+    forget()
+    spec = importlib.util.find_spec("sherpa_onnx")
+    pkg = Path(spec.origin).parent if spec and spec.origin else None
+    if pkg is None:
+        raise first
+    buf = ctypes.create_unicode_buffer(1024)
+    if ctypes.windll.kernel32.GetShortPathNameW(str(pkg.parent), buf, 1024) and len(buf.value) < len(str(pkg.parent)):
+        mod = load_from(buf.value)
+        if mod:
+            return mod
+    # A copy of the library in a short folder. Same version check each start, so an update replaces it.
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "PeakCut" / "lib"
+    stamp = base / "sherpa_onnx.from"
+    want = f"{pkg}|{(pkg / '__init__.py').stat().st_mtime_ns}"
+    try:
+        if not (base / "sherpa_onnx").is_dir() or not stamp.is_file() or stamp.read_text(encoding="utf-8") != want:
+            shutil.rmtree(base / "sherpa_onnx", ignore_errors=True)
+            shutil.copytree(pkg, base / "sherpa_onnx")
+            stamp.write_text(want, encoding="utf-8")
+        mod = load_from(str(base))
+        if mod:
+            return mod
+    except OSError:
+        pass
+    raise RuntimeError("PeakCut is in a folder too deep for Windows to load the speech model from. Move the PeakCut "
+                       "folder somewhere short, like C:\\peakcut, and start it again.") from first
 
 
 def _new():
+    sherpa_onnx = _sherpa()
+    from . import fetch_model
+    fetch_model.ensure()             # downloaded here, once, if it was never fetched
     d = config.ASR_MODEL_DIR
     if config.ASR_MODEL_TYPE == "faster_whisper":
         from faster_whisper import WhisperModel

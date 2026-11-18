@@ -17,7 +17,8 @@ creator's live stream and clip the highlights while the stream is still running.
 - **Live clipping.** Records a stream into a rolling buffer and clips as it happens, using loudness, chat activity
   and the transcript.
 - **Workspaces per creator.** Channels, clip settings, posting rules and an activity log for each creator you clip.
-- **Posting.** Queue or auto-post finished clips to YouTube Shorts and Instagram Reels, with spacing and daily caps.
+- **Posting.** Connect YouTube, Instagram and TikTok in one click, then queue or auto-post finished clips, with
+  spacing and daily caps (see [DEPLOY.md](DEPLOY.md#connecting-youtube-instagram-and-tiktok) for the one-time setup).
 - **No sign-in on your own computer.** It opens straight into the dashboard. On a shared server, switch accounts on
   (`PEAKCUT_ACCOUNTS=1`) for email or Google sign-in and an admin dashboard.
 - **Local AI by default.** Ollama runs on your computer; Clippy does not send video or transcript text to an AI
@@ -27,27 +28,39 @@ creator's live stream and clip the highlights while the stream is still running.
 
 ## Quick start
 
-You need Python 3.10–3.13 and FFmpeg with the `ass` subtitle filter (libass). On macOS with Homebrew, install the
-full build with `brew install ffmpeg-full`; Clippy checks for this before it starts.
+You need Python 3.10 or newer and `ffmpeg`. On Windows: `winget install Gyan.FFmpeg`. On a Mac: `brew install ffmpeg`.
+On Linux: `sudo apt install ffmpeg`. PeakCut finds it by itself and tells you in the dashboard if it is missing.
 
-On macOS, double-click [`start-clippy.command`](start-clippy.command). It checks for Python and FFmpeg, installs
-the Python packages in a local virtual environment, downloads the speech model if needed, starts the server and
-opens Clippy in your browser.
+Put PeakCut in a short folder that stays put: `C:\peakcut` on Windows, `~/peakcut` on a Mac or Linux. Not inside a
+temporary folder or an AI assistant's workspace: those get cleaned up, and on Windows a folder that deep stops the
+speech model from loading (Windows can't open files whose full path is over 260 characters). If an AI assistant
+installs it for you, it should ask you where to put it first ([AGENTS.md](AGENTS.md) tells it to).
 
-Or start it manually from the project folder:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt --index-url https://pypi.org/simple
-```
-
-Download the multilingual Whisper large-v3-turbo speech model once (about 1.6 GB) and start the server. It detects
-the spoken language locally, including English, Hindi and mixed Hindi-English:
+On Windows:
 
 ```bash
-python -m studio.fetch_model
+git clone <this repository> C:\peakcut
 ```
+
+```bash
+cd C:\peakcut
+```
+
+On a Mac or Linux:
+
+```bash
+git clone <this repository> ~/peakcut
+```
+
+```bash
+cd ~/peakcut
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+Start the server:
 
 For AI clip selection without API credits, install [Ollama](https://ollama.com/) and download the default model:
 
@@ -63,30 +76,10 @@ memory and electricity.
 python -m studio.server
 ```
 
-Open http://127.0.0.1:8765/app. There is no sign-in on your own computer.
+The first start downloads the speech model by itself (about 480 MB, once).
 
-**Keep the server running while using Clippy.** Do not open `web/index.html` from Finder: a `file://` page cannot
-reach the local API, which prevents navigation, channel lookup and video link previews from working. The page
-now explains this if opened directly.
-
-Clippy works with both regular YouTube videos and live streams. Paste a video link on Home or All videos to clip
-it; add a creator when you want a saved workspace or automatic live recording.
-
-## Connect YouTube or Instagram
-
-Open **Settings → Connected apps**. The first time, the server owner registers an app with each platform, copies
-the callback address Clippy shows, and saves the app ID and secret there. Clippy then sends each creator to the
-platform's own sign-in page; it does not ask for their password.
-
-- **YouTube:** create a Google Cloud web OAuth client, enable **YouTube Data API v3**, and register the callback
-  shown in Clippy. Add your Google account as a test user if the consent screen is still in testing.
-- **Instagram:** create a Meta app with **Instagram API with Instagram Login**, add the callback shown in Clippy,
-  and use a Creator or Business account. Meta must be able to fetch the finished video from a public HTTPS address;
-  for a local install, set `PEAKCUT_PUBLIC_URL` to an HTTPS tunnel or domain before connecting.
-
-You can also provide Google credentials with `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and Instagram app
-credentials with `PEAKCUT_IG_APP_ID` and `PEAKCUT_IG_APP_SECRET`. The app credentials and connected account tokens
-are stored in the ignored `data` folder, never in the repository.
+Open http://127.0.0.1:8765. There is no sign-in: it opens straight into the dashboard. Go to **Settings, AI**, choose
+your AI service, paste your key and press **Save and test** (see [Choose your AI](#choose-your-ai)).
 
 ## Choose your AI
 
@@ -163,6 +156,23 @@ Data is kept per user: accounts in the database (SQLite on your own computer, Po
 clips in each user's own folder. [AGENTS.md](AGENTS.md) is a short map of the code for contributors and AI coding
 assistants.
 
+## Where your videos and clips are kept
+
+Everything PeakCut keeps is in one folder: videos, clips, recordings, creators, settings and the speech model. By
+default it is the `data` folder inside PeakCut. **Settings, Storage** shows the folder and how much room its drive
+has, opens it in one click, and lets you move it to another drive: choose the new folder, and PeakCut moves
+everything there the next time it starts. If the drive is nearly full, PeakCut says so and stops taking new videos
+until there is room. (`PEAKCUT_DATA` in `.env` still works and takes priority.)
+
+## Updating
+
+PeakCut checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice
+within a minute or two (no restart needed), with what changed
+and how to update: ask your AI coding assistant to do it (the notice has a sentence to paste), or run
+`git pull && pip install -r requirements.txt` in the PeakCut folder and restart it (with Docker:
+`git pull && docker compose up -d --build`). Your `.env`, keys and clips are not touched. Only the two commit ids
+are sent to GitHub; set `PEAKCUT_UPDATE_CHECK=0` to turn the check off.
+
 ## Deploy
 
 [DEPLOY.md](DEPLOY.md) walks through a single server with Docker: the app, PostgreSQL, and Caddy for HTTPS.
@@ -178,7 +188,8 @@ docker compose up -d --build
 - Each person's videos wait in their own line and the lines take turns, so one person cannot hold everyone up.
 - The server measures its own processor, memory and disk every second. Extra videos and recordings start only
   while there is room, wait briefly when it is nearly full, and continue the moment it frees up.
-- Uploads, video length, storage per account and request sizes all have limits, set in `.env`.
+- There are no limits on upload size, video length, recordings, creators or storage unless you set them in
+  `.env`. Five videos can be sent at once. Request sizes are always capped, so junk can't fill the memory.
 
 ## Tests
 

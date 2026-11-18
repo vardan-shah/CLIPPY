@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from . import config
+from . import config, roman
 from .media import NO_WINDOW, run
 
 W, H = config.OUT_W, config.OUT_H
@@ -78,7 +78,8 @@ def install_fonts():
             shutil.copyfile(f, config.FONTS_DIR / f.name)
 
 
-LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)"}
+LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)",
+           "gameplay": "Gameplay fills the screen, facecam in the corner"}
 
 
 def _ts(t):
@@ -119,7 +120,7 @@ def geometry(src_w, src_h, layout):
     else:
         fg_h = H
     top = (H - fg_h) // 2
-    if layout == "crop":
+    if layout in ("crop", "gameplay"):
         return layout, fg_h, 300, 1380
     return layout, fg_h, max(230, top - 190), min(1640, top + fg_h + 180)
 
@@ -178,7 +179,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     ev = _hook_events(_clean(hook), dur, hook_y)
     f = _Font.get(st["font"])
     inside = [dict(w, w=_clean(w["w"])) for w in words if w["s"] >= start - 0.05 and w["s"] < end]
-    inside = [w for w in inside if w["w"]]
+    inside = sorted((w for w in inside if w["w"]), key=lambda w: w["s"])
+    for i, w in enumerate(inside[:-1]):
+        w["e"] = max(w["s"], min(w["e"], inside[i + 1]["s"]))
     groups = _groups(inside, st["per"])
     for gi, g in enumerate(groups):
         g_start = max(0.0, g[0]["s"] - start)
@@ -189,6 +192,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for x in g:
             t = re.sub(r"[.,;:]+$", "", x["w"])
             texts.append(t.upper() if st["upper"] else t)
+        if not all(roman.drawable(t) for t in texts):
+            # A script the caption font cannot draw (Japanese, Thai, Chinese...): its words cannot be measured, so
+            # they are not placed one by one. The line is drawn whole and centred, in a font the system has for it.
+            line = " ".join(texts)
+            fs = max(44, min(int(st["size"] * 0.7), int(1500 / max(1, len(line)) * 1.6)))
+            ev.append(f"Dialogue: 1,{_ts(g_start)},{_ts(g_end)},Cap,,60,60,0,,{{\\an5\\pos({W // 2},{cap_y:.0f})\\q0\\fs{fs}}}{line}")
+            continue
         size = st["size"]
         gap = f.width("n n", size) - 2 * f.width("n", size) + (2 * st["outline"] + 6) * size / st["size"]   # a space, plus room for both outlines
         total = sum(f.width(t, size) for t in texts) + gap * (len(texts) - 1)
@@ -218,8 +228,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return head + "\n".join(ev) + "\n"
 
 
-def _filter(layout, fg_h):
-    if layout == "crop":
+PIP_W = 380            # how wide the facecam is in the 1080-wide frame
+PIP_MARGIN = 26
+
+
+def _filter(layout, fg_h, facecam=None):
+    if layout == "gameplay" and facecam:
+        # The game fills the screen, and the webcam sits in the top corner of it, so a viewer sees
+        # the play and the face at the same time.
+        fx, fy, fw, fh = (int(v) for v in facecam)
+        if fw > 8 and fh > 8:
+            pip_h = max(2, int(round(PIP_W * fh / fw)))
+            return (f"[0:v]fps={config.OUT_FPS},split=2[base][fc];"
+                    f"[base]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[b];"
+                    f"[fc]crop={fw}:{fh}:{fx}:{fy},scale={PIP_W}:{pip_h},setsar=1[p];"
+                    f"[b][p]overlay={W - PIP_W - PIP_MARGIN}:{PIP_MARGIN}[v0];")
+    if layout == "crop" or (layout == "gameplay" and not facecam):
         return f"[0:v]fps={config.OUT_FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[v0];"
     return (f"[0:v]fps={config.OUT_FPS},split=2[a][b];"
             f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,"
@@ -228,31 +252,16 @@ def _filter(layout, fg_h):
             f"[bg][fg]overlay=0:(H-h)/2,setsar=1[v0];")
 
 
+def _hook_y(layout, hook_y, facecam=None):
+    """Where the heading goes. In the gameplay layout the webcam sits in the top corner, so a heading
+    across the top would run under it: it goes just below the picture instead."""
+    if layout == "gameplay" and facecam and len(facecam) == 4 and facecam[2] > 8:
+        return PIP_MARGIN + int(round(PIP_W * facecam[3] / facecam[2])) + 32
+    return hook_y
+
+
 _qsv_ok = None
-_ass_ok = None
-
-
-def _require_ass_filter():
-    """Fail before a job starts rendering if this FFmpeg build cannot draw its subtitles."""
-    global _ass_ok
-    if _ass_ok is None:
-        try:
-            p = subprocess.run([config.FFMPEG, "-hide_banner", "-filters"], capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", creationflags=NO_WINDOW, timeout=15)
-            _ass_ok = p.returncode == 0 and any(len(parts := line.split()) > 1 and parts[1] == "ass"
-                                                for line in (p.stdout + p.stderr).splitlines())
-        except (OSError, subprocess.TimeoutExpired):
-            _ass_ok = False
-    if not _ass_ok:
-        if not Path(config.FFMPEG).is_file() and config.FFMPEG != "ffmpeg":
-            reason = f"FFmpeg was not found at {config.FFMPEG}."
-        else:
-            reason = "This FFmpeg build does not include ASS subtitle support (libass)."
-        if __import__("sys").platform == "darwin":
-            reason += " Install it with `brew install ffmpeg-full`, then restart Clippy."
-        else:
-            reason += " Install an FFmpeg build with libass subtitle support, then restart Clippy."
-        raise RuntimeError(reason)
+RENDER_SECONDS = 600      # one clip's video encode; far beyond normal, so a frozen encoder is stopped, not waited on
 
 
 def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, src_w: int, src_h: int) -> dict:
@@ -260,7 +269,11 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
     out_dir.mkdir(parents=True, exist_ok=True)
     start, end = clip["start"], clip["end"]
     layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, clip.get("layout", "blur"))
-    ass = build_ass(words, start, end, clip.get("hook", ""), clip.get("style", "bounce"),
+    face = clip.get("facecam")
+    if layout == "gameplay" and not (face and len(face) == 4):
+        layout = "crop"     # no webcam found: the game fills the screen, which is still the right shape
+    hook_y = _hook_y(layout, hook_y, face)
+    ass = build_ass(words if clip.get("captions", True) else [], start, end, clip.get("hook", ""), clip.get("style", "bounce"),
                     clip.get("highlight_words", []), hook_y, cap_y)
     # The clip is made in a short work folder and moved into place afterwards. The caption step of ffmpeg cannot
     # open files whose full path is longer than 260 characters on Windows, which a data folder deep inside other
@@ -268,20 +281,20 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
     # break the filter syntax).
     work = Path(tempfile.mkdtemp(prefix="pk"))
     try:
-        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass)
+        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass, face=face)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str) -> dict:
+def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str, face=None) -> dict:
     global _qsv_ok
     _require_ass_filter()
     (work / f"{name}.ass").write_text(ass, encoding="utf-8")
     (work / "f").mkdir()
     for f in config.FONTS_DIR.glob("*.ttf"):
         shutil.copyfile(f, work / "f" / f.name)
-    fc = _filter(layout, fg_h) + f"[v0]ass=filename={name}.ass:fontsdir=f[v]"
-    base = [config.FFMPEG, "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
+    fc = _filter(layout, fg_h, face) + f"[v0]ass={name}.ass:fontsdir=f[v]"
+    base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]
     encoders = []
@@ -291,7 +304,7 @@ def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layo
     err = None
     for label, enc in encoders:
         p = subprocess.run(base + enc + [f"{name}.mp4"], cwd=work, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", creationflags=NO_WINDOW, timeout=1800)
+                           encoding="utf-8", errors="replace", creationflags=NO_WINDOW, timeout=RENDER_SECONDS)
         if p.returncode == 0:
             if label == "qsv":
                 _qsv_ok = True

@@ -29,6 +29,16 @@ def _save():
         tmp.replace(_FILE)
 
 
+def forget(uid: str):
+    """Drop everything queued or recorded for a deleted account, so nothing is posted or retried for it any more."""
+    with _lock:
+        for p in _posts:
+            if p.get("user") == uid:
+                p["status"] = "deleted"          # the posting loop may be holding this one already: it then skips it
+        _posts[:] = [p for p in _posts if p.get("user") != uid]
+        _save()
+
+
 def _day(t):
     return time.strftime("%Y-%m-%d", time.localtime(t))
 
@@ -111,6 +121,8 @@ def _post(p):
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"])
         elif acc["platform"] == "instagram":
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
+        elif acc["platform"] == "tiktok":
+            rid, url = accounts.tiktok_upload(acc, path, f"{title}\n\n{cap}", creator["privacy"])
         else:
             raise RuntimeError("That kind of account is no longer supported.")
         p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None)

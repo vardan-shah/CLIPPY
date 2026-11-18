@@ -52,7 +52,71 @@ def _read_secret(var: str, file_var: str, pattern: str) -> str:
 
 
 # ---------------------------------------------------------------- where things live
-DATA_DIR = Path(env("PEAKCUT_DATA") or ROOT / "data")
+# Everything PeakCut keeps is in one folder. Which one: PEAKCUT_DATA in .env if it is set; otherwise the folder the
+# owner chose in Settings, Storage (kept in storage.json); otherwise "data" inside PeakCut's own folder.
+STORAGE_FILE = Path(env("PEAKCUT_STORAGE_FILE") or ROOT / "storage.json")
+
+
+def _move_folder(old: Path, new: Path) -> bool:
+    """Move everything from the old folder into the new one. Done at start, before anything is open. True when
+    nothing is left behind; anything that could not be moved stays where it was and is tried again next start."""
+    import shutil
+    if not old.is_dir() or old.resolve() == new.resolve():
+        return True
+    items = list(old.iterdir())
+    if items:
+        print(f"\n  Moving PeakCut's folder to {new} ({len(items)} things). This is done once and can take a while...", flush=True)
+    done = True
+    for item in items:
+        target = new / item.name
+        try:
+            if target.exists() and item.is_dir():
+                for sub in item.iterdir():           # the folder is already there (made empty, or half moved): fill it
+                    if not (target / sub.name).exists():
+                        shutil.move(str(sub), str(target / sub.name))
+                if not any(item.iterdir()):
+                    item.rmdir()
+                else:
+                    done = False
+            elif not target.exists():
+                shutil.move(str(item), str(target))
+            else:
+                done = False
+        except OSError as e:
+            print(f"  Could not move {item.name}: {e}", flush=True)
+            done = False
+    if done:
+        try:
+            old.rmdir()
+        except OSError:
+            pass
+        print("  Moved.\n", flush=True)
+    return done
+
+
+def _data_folder():
+    if env("PEAKCUT_DATA"):
+        return Path(env("PEAKCUT_DATA")), "env"
+    try:
+        chosen = json.loads(STORAGE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        chosen = {}
+    if not chosen.get("path"):
+        return ROOT / "data", "default"
+    new = Path(chosen["path"])
+    try:
+        new.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise SystemExit(f"\n  PeakCut's folder is set to {new}, and that can't be reached right now.\n"
+                         f"  Connect that drive and start PeakCut again, or delete {STORAGE_FILE} to go back to the\n"
+                         f"  folder inside PeakCut (your videos and clips stay where they are).\n")
+    if chosen.get("move_from"):
+        if _move_folder(Path(chosen["move_from"]), new):
+            STORAGE_FILE.write_text(json.dumps({"path": str(new)}, indent=1), encoding="utf-8")
+    return new, "chosen"
+
+
+DATA_DIR, DATA_FROM = _data_folder()
 USERS_DIR = DATA_DIR / "users"          # users/<user id>/{creators,jobs,accounts}
 MODELS_DIR = Path(env("PEAKCUT_MODELS") or DATA_DIR / "models")
 TMP_DIR = DATA_DIR / "tmp"
@@ -68,6 +132,16 @@ ASR_MODEL_TYPE = env("PEAKCUT_ASR_MODEL_TYPE", "faster_whisper" if "faster-whisp
 ASR_MODEL_REPO = env("PEAKCUT_ASR_MODEL_REPO", "dropbox-dash/faster-whisper-large-v3-turbo").strip()
 ASR_MODEL_DIR = MODELS_DIR / ASR_MODEL_NAME
 DATABASE_URL = env("DATABASE_URL") or f"sqlite:///{(DATA_DIR / 'peakcut.db').as_posix()}"
+# Commercials and "be right back" screens are stitched into streams. A clip taken from one is worthless, so those
+# seconds can be found and left out. It is off by default: it reads the whole video once, which is not free, and
+# a video that is meant to be still must not lose its clips. PEAKCUT_SKIP_STATIC=1 turns it on.
+# The threshold is the mean luma difference between frames: under it, nothing moved.
+SKIP_STATIC = env("PEAKCUT_SKIP_STATIC", "0") == "1"
+STATIC_THRESHOLD = float(env("PEAKCUT_STATIC_THRESHOLD", "0.4"))
+STATIC_MIN_SECONDS = float(env("PEAKCUT_STATIC_MIN_SECONDS", "6"))
+# How long one AI answer may take on a live stream. It is short on purpose: while the AI thinks, the
+# recording carries on, so a slow answer costs a check, not the stream.
+LIVE_AI_TIMEOUT = float(env("PEAKCUT_LIVE_AI_TIMEOUT", "45"))
 
 # Homebrew's regular FFmpeg build omits ASS subtitles. Prefer the full build when it is installed, while still
 # allowing a user or server to name their own FFmpeg binaries.
@@ -103,18 +177,29 @@ REPO_URL = env("PEAKCUT_REPO_URL", "https://github.com/vardan-shah/CLIPPY").stri
 FOLLOW_URL = env("PEAKCUT_FOLLOW_URL", "").strip()
 
 # ---------------------------------------------------------------- limits (per user, and for the whole server)
-MAX_UPLOAD_MB = int(env("PEAKCUT_MAX_UPLOAD_MB", "2048"))        # the largest video file someone may upload
+# Your own PeakCut has no limits unless you set them: 0 (the default) means "none" for every limit below. The
+# machine still protects itself: new work waits while the processor, memory or disk are nearly full (load.py).
+_NONE = 10 ** 7                      # what "no limit" becomes: far beyond anything real, and still a plain number
+
+
+def _limit(name: str, default: str = "0"):
+    v = float(env(name) or default)
+    return _NONE if v <= 0 else v
+
+
+MAX_UPLOAD_MB = int(_limit("PEAKCUT_MAX_UPLOAD_MB"))              # the largest video file someone may upload
 # A big file is sent in pieces of this size and joined here, because web servers and CDNs in front of the app
 # refuse very large single requests (Cloudflare stops at 100 MB).
 UPLOAD_PART_MB = max(5, int(env("PEAKCUT_UPLOAD_PART_MB", "40")))
 # The most videos that may ever run at once. How many actually run is decided by how busy the machine is (load.py).
 JOB_WORKERS = int(env("PEAKCUT_JOB_WORKERS") or max(2, os.cpu_count() or 4))
-MAX_ACTIVE_JOBS_PER_USER = int(env("PEAKCUT_MAX_JOBS_PER_USER", "5"))
+MAX_ACTIVE_JOBS_PER_USER = int(_limit("PEAKCUT_MAX_JOBS_PER_USER", "5"))    # videos sent and worked on at once
 MAX_LIVE_TOTAL = int(env("PEAKCUT_MAX_LIVE") or max(4, 2 * (os.cpu_count() or 4)))   # ceiling; real load decides below it
-MAX_LIVE_PER_USER = int(env("PEAKCUT_MAX_LIVE_PER_USER", "1"))
-MAX_VIDEO_HOURS = float(env("PEAKCUT_MAX_VIDEO_HOURS", "6"))    # longest video (or chosen part of one) that is processed
-MAX_LIVE_HOURS = float(env("PEAKCUT_MAX_LIVE_HOURS", "12"))     # a recording stops by itself after this long
-MAX_USER_GB = float(env("PEAKCUT_MAX_USER_GB", "50"))           # disk space one account may fill
+MAX_LIVE_PER_USER = int(_limit("PEAKCUT_MAX_LIVE_PER_USER"))     # streams one person records at once
+MAX_VIDEO_HOURS = _limit("PEAKCUT_MAX_VIDEO_HOURS")              # longest video (or chosen part of one) that is processed
+MAX_LIVE_HOURS = _limit("PEAKCUT_MAX_LIVE_HOURS")                # a recording stops by itself after this long
+MAX_USER_GB = _limit("PEAKCUT_MAX_USER_GB")                      # disk space one account may fill
+MAX_CREATORS = int(_limit("PEAKCUT_MAX_CREATORS"))               # creators one account may add
 ALLOWED_SITES = tuple(s.strip().lower() for s in env(
     "PEAKCUT_ALLOWED_SITES", "youtube.com,youtu.be,twitch.tv,kick.com").split(",") if s.strip())
 
