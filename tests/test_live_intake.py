@@ -130,6 +130,20 @@ def publishes_live_progress():
     assert recording.job["live"]["words"] == len(recording.words)
 
 
+def transcribes_live_audio_in_batches():
+    directory = DATA / "batch-session"
+    directory.mkdir()
+    recording = live.Session({"id": "batch", "user": "u_local", "dir": str(directory), "creator": "creator1",
+                              "title": "Stream", "uploader": "Streamer", "clips": [],
+                              "source": {"name": "Streamer live"}, "ai": {}}, {})
+    recording.pending = bytearray(17 * live.SR * 2)
+    assert not recording._transcribe_step()
+    recording.pending = bytearray(20 * live.SR * 2)
+    with patch.object(live.transcribe, "transcribe", return_value=[]) as decode:
+        assert recording._transcribe_step()
+    assert decode.call_args.args[0].size == 20 * live.SR
+
+
 check("pasted live link reuses the creator's active recording", reuses_active)
 check("pasted live link starts the creator recorder", starts_live_recording)
 check("stale preview refreshes when a scheduled stream goes live", refreshes_stale_live_preview)
@@ -138,5 +152,6 @@ check("live link without a creator explains how to proceed", requires_creator)
 check("stopping a recording makes a final AI check", checks_final_window_after_stop)
 check("Twitch and Kick live channel links are accepted", accepts_twitch_and_kick)
 check("live status publishes transcript and recording progress", publishes_live_progress)
+check("live speech waits for efficient Whisper batches", transcribes_live_audio_in_batches)
 shutil.rmtree(DATA, ignore_errors=True)
 sys.exit(1 if failed else 0)

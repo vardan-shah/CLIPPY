@@ -384,14 +384,14 @@ class Session:
         with self.lock:
             n = len(self.pending) // 2
             hurry = self.ended or bool(self.manual)
-            if n < (SR if hurry else SR * 7):   # about every 7 s, so "what was just said" really is live
+            if n < (SR if hurry else SR * 18):
                 return False
             audio = np.frombuffer(bytes(self.pending[: n * 2]), dtype=np.int16)
             base = self.pending_base
         cut = n
         if not hurry or n > SR * 24:
-            # cut at the quietest moment between 4 and 6.5 s, so no word is split; the rest waits for the next pass
-            _, cut = next(transcribe._chunks(audio, 4.0, 6.5))
+            # Whisper is much faster on one longer window than repeated short live slices.
+            _, cut = next(transcribe._chunks(audio, 12.0, 24.0))
         words = transcribe.transcribe(audio[:cut])
         off = base / SR
         for w in words:
