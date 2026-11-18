@@ -52,8 +52,8 @@ def _read_secret(var: str, file_var: str, pattern: str) -> str:
 
 
 # ---------------------------------------------------------------- where things live
-# Everything PeakCut keeps is in one folder. Which one: PEAKCUT_DATA in .env if it is set; otherwise the folder the
-# owner chose in Settings, Storage (kept in storage.json); otherwise "data" inside PeakCut's own folder.
+# Everything Clippy keeps is in one folder. Which one: PEAKCUT_DATA in .env if it is set; otherwise the folder the
+# owner chose in Settings, Storage (kept in storage.json); otherwise "data" inside Clippy's own folder.
 STORAGE_FILE = Path(env("PEAKCUT_STORAGE_FILE") or ROOT / "storage.json")
 
 
@@ -65,7 +65,7 @@ def _move_folder(old: Path, new: Path) -> bool:
         return True
     items = list(old.iterdir())
     if items:
-        print(f"\n  Moving PeakCut's folder to {new} ({len(items)} things). This is done once and can take a while...", flush=True)
+        print(f"\n  Moving Clippy's folder to {new} ({len(items)} things). This is done once and can take a while...", flush=True)
     done = True
     for item in items:
         target = new / item.name
@@ -107,9 +107,9 @@ def _data_folder():
     try:
         new.mkdir(parents=True, exist_ok=True)
     except OSError:
-        raise SystemExit(f"\n  PeakCut's folder is set to {new}, and that can't be reached right now.\n"
-                         f"  Connect that drive and start PeakCut again, or delete {STORAGE_FILE} to go back to the\n"
-                         f"  folder inside PeakCut (your videos and clips stay where they are).\n")
+        raise SystemExit(f"\n  Clippy's folder is set to {new}, and that can't be reached right now.\n"
+                         f"  Connect that drive and start Clippy again, or delete {STORAGE_FILE} to go back to the\n"
+                         f"  folder inside Clippy (your videos and clips stay where they are).\n")
     if chosen.get("move_from"):
         if _move_folder(Path(chosen["move_from"]), new):
             STORAGE_FILE.write_text(json.dumps({"path": str(new)}, indent=1), encoding="utf-8")
@@ -177,7 +177,7 @@ REPO_URL = env("PEAKCUT_REPO_URL", "https://github.com/vardan-shah/CLIPPY").stri
 FOLLOW_URL = env("PEAKCUT_FOLLOW_URL", "").strip()
 
 # ---------------------------------------------------------------- limits (per user, and for the whole server)
-# Your own PeakCut has no limits unless you set them: 0 (the default) means "none" for every limit below. The
+# Your own Clippy has no limits unless you set them: 0 (the default) means "none" for every limit below. The
 # machine still protects itself: new work waits while the processor, memory or disk are nearly full (load.py).
 _NONE = 10 ** 7                      # what "no limit" becomes: far beyond anything real, and still a plain number
 

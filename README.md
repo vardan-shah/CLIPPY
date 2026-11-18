@@ -3,7 +3,7 @@
 Turn long videos and live streams into captioned vertical clips, ready to post. Free and open source: run it on
 your own computer. Local Ollama is the default AI, so clipping does not require API credits or a paid AI account.
 
-Clippy is a customized, local-first version of PeakCut. The upstream MIT license is kept in [LICENSE](LICENSE).
+Clippy is a customized, local-first fork of PeakCut. The upstream MIT license is kept in [LICENSE](LICENSE).
 
 Paste a YouTube, Twitch or Kick link (or upload a file) and Clippy finds the moments worth clipping, cuts them to
 9:16, adds word-by-word captions and a hook, and can post them to your connected accounts. It can also record a
@@ -17,8 +17,10 @@ creator's live stream and clip the highlights while the stream is still running.
 - **Live clipping.** Records a stream into a rolling buffer and clips as it happens, using loudness, chat activity
   and the transcript.
 - **Workspaces per creator.** Channels, clip settings, posting rules and an activity log for each creator you clip.
-- **Posting.** Connect YouTube, Instagram and TikTok in one click, then queue or auto-post finished clips, with
-  spacing and daily caps (see [DEPLOY.md](DEPLOY.md#connecting-youtube-instagram-and-tiktok) for the one-time setup).
+- **Posting.** Connect YouTube and Instagram, then queue or auto-post finished clips with spacing and daily caps
+  (see [DEPLOY.md](DEPLOY.md#connecting-youtube-and-instagram) for setup).
+- **Game streams.** Clippy recognizes GTA VI and other games, scores gameplay moments with game context, and can
+  keep a detected facecam in the vertical crop. See [GAMING.md](GAMING.md).
 - **No sign-in on your own computer.** It opens straight into the dashboard. On a shared server, switch accounts on
   (`PEAKCUT_ACCOUNTS=1`) for email or Google sign-in and an admin dashboard.
 - **Local AI by default.** Ollama runs on your computer; Clippy does not send video or transcript text to an AI
@@ -29,9 +31,9 @@ creator's live stream and clip the highlights while the stream is still running.
 ## Quick start
 
 You need Python 3.10 or newer and `ffmpeg`. On Windows: `winget install Gyan.FFmpeg`. On a Mac: `brew install ffmpeg`.
-On Linux: `sudo apt install ffmpeg`. PeakCut finds it by itself and tells you in the dashboard if it is missing.
+On Linux: `sudo apt install ffmpeg`. Clippy finds it by itself and tells you in the dashboard if it is missing.
 
-Put PeakCut in a short folder that stays put: `C:\peakcut` on Windows, `~/peakcut` on a Mac or Linux. Not inside a
+Put Clippy in a short folder that stays put: `C:\Clippy` on Windows, `~/clippy` on a Mac or Linux. Not inside a
 temporary folder or an AI assistant's workspace: those get cleaned up, and on Windows a folder that deep stops the
 speech model from loading (Windows can't open files whose full path is over 260 characters). If an AI assistant
 installs it for you, it should ask you where to put it first ([AGENTS.md](AGENTS.md) tells it to).
@@ -39,21 +41,21 @@ installs it for you, it should ask you where to put it first ([AGENTS.md](AGENTS
 On Windows:
 
 ```bash
-git clone <this repository> C:\peakcut
+git clone <this repository> C:\Clippy
 ```
 
 ```bash
-cd C:\peakcut
+cd C:\Clippy
 ```
 
 On a Mac or Linux:
 
 ```bash
-git clone <this repository> ~/peakcut
+git clone <this repository> ~/clippy
 ```
 
 ```bash
-cd ~/peakcut
+cd ~/clippy
 ```
 
 ```bash
@@ -158,18 +160,18 @@ assistants.
 
 ## Where your videos and clips are kept
 
-Everything PeakCut keeps is in one folder: videos, clips, recordings, creators, settings and the speech model. By
-default it is the `data` folder inside PeakCut. **Settings, Storage** shows the folder and how much room its drive
-has, opens it in one click, and lets you move it to another drive: choose the new folder, and PeakCut moves
-everything there the next time it starts. If the drive is nearly full, PeakCut says so and stops taking new videos
+Everything Clippy keeps is in one folder: videos, clips, recordings, creators, settings and the speech model. By
+default it is the `data` folder inside Clippy. **Settings, Storage** shows the folder and how much room its drive
+has, opens it in one click, and lets you move it to another drive: choose the new folder, and Clippy moves
+everything there the next time it starts. If the drive is nearly full, Clippy says so and stops taking new videos
 until there is room. (`PEAKCUT_DATA` in `.env` still works and takes priority.)
 
 ## Updating
 
-PeakCut checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice
+Clippy checks GitHub once a minute while it runs. When a newer version is out, the dashboard shows a notice
 within a minute or two (no restart needed), with what changed
 and how to update: ask your AI coding assistant to do it (the notice has a sentence to paste), or run
-`git pull && pip install -r requirements.txt` in the PeakCut folder and restart it (with Docker:
+`git pull && pip install -r requirements.txt` in the Clippy folder and restart it (with Docker:
 `git pull && docker compose up -d --build`). Your `.env`, keys and clips are not touched. Only the two commit ids
 are sent to GitHub; set `PEAKCUT_UPDATE_CHECK=0` to turn the check off.
 

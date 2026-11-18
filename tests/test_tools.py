@@ -4,6 +4,7 @@ import io, os, shutil, sys, tarfile, tempfile
 from pathlib import Path
 os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="pc-tools-"); os.environ["DATABASE_URL"] = ""
 os.environ.pop("PEAKCUT_MODELS", None)          # this test makes and removes a model: only ever inside its own folder
+os.environ["PEAKCUT_ASR_MODEL"] = "test-transducer"
 os.environ.update(PEAKCUT_AI_PROVIDER="gemini", PEAKCUT_AI_MODELS="gemini-old", PEAKCUT_AI_KEY="test-key-123456")
 sys.path.insert(0, ".")
 from studio import ai, config, fetch_model, safe, tools
@@ -62,6 +63,21 @@ try:
 except RuntimeError as e:
     said = str(e)
 check("no internet: said in plain words, and no half model left behind", ("internet" in said, fetch_model.ready(), d.exists()), (True, False, False))
+
+# ---- the faster-whisper model is downloaded from its model repository, not the sherpa archive
+config.ASR_MODEL_TYPE = "faster_whisper"
+config.ASR_MODEL_REPO = "example/faster-whisper-test"
+def fake_hf_download(repo_id, output_dir=None):
+    assert repo_id == config.ASR_MODEL_REPO
+    folder = Path(output_dir)
+    for name in ("config.json", "model.bin", "tokenizer.json", "vocabulary.json"):
+        (folder / name).write_bytes(b"model")
+from faster_whisper import utils as fw_utils
+fw_utils.download_model = fake_hf_download
+fetch_model.ensure()
+check("a complete faster-whisper download is recognized", fetch_model.ready())
+check("the model is moved into place after download", (d / "model.bin").is_file() and not (config.MODELS_DIR / "speech-model.unpacking").exists())
+shutil.rmtree(d)
 
 # ---- the AI
 check("an unknown model name", ai.explain("HTTP 404 models/gemini-old is not found for API version v1beta"), lambda s: "gemini-old" in s and "Find models" in s)

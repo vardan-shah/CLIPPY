@@ -33,7 +33,7 @@ for bad in ("x,victim@example.com", "a<b>@example.com", 'a"b@example.com', "a;b@
 for good in ("jane.doe+news@example.com", "a_b-c@sub.example.co.uk"):
     check(f"{good!r} is still accepted", bool(auth.EMAIL_RE.match(good)))
 sent = []
-mailer.config.SMTP_HOST, mailer.config.MAIL_FROM = "smtp.invalid", "PeakCut <hello@example.com>"
+mailer.config.SMTP_HOST, mailer.config.MAIL_FROM = "smtp.invalid", "Clippy <hello@example.com>"
 mailer.threading.Thread = lambda target, **k: type("T", (), {"start": lambda s: sent.append(1)})()
 check("a header with two addresses is never sent", mailer.send("x,victim@example.com", "s", "t", "i", "b", "https://x", "o") is False and not sent)
 check("a normal address is sent", mailer.send("jane@example.com", "s", "t", "i", "b", "https://x", "o") is True and sent)

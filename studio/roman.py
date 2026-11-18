@@ -1,9 +1,9 @@
-"""Hindi and Urdu in Roman letters ("Hinglish"), for captions: चूना जो उसको -> chuna jo usko, یار کیا ہے -> yaar kya hai.
+"""Hindi in Roman letters ("Hinglish") for captions: चूना जो उसको -> chuna jo usko.
 
 Not a translation: the same word, spelled the way people type it in chats. The AI does this when it tidies a
 clip's captions (brain.fix_caption_words); this is the fallback for when there is no AI, or it missed a word, so
-that a caption is never drawn in Hindi or Urdu script. Urdu is written without most vowels, so common words come
-from a list and the rest are spelled from their letters: readable, if not always how a person would type it."""
+that captions never show Hindi in Devanagari or a mistaken Arabic-script transcript. Common Arabic-script words
+are mapped as a fallback when speech recognition mislabels Hindi; this preserves readability without translation."""
 import re
 
 _VOWELS = {"अ": "a", "आ": "aa", "इ": "i", "ई": "ee", "उ": "u", "ऊ": "oo", "ऋ": "ri", "ए": "e", "ऐ": "ai",
@@ -27,7 +27,7 @@ _WORDS = {"में": "mein", "मैं": "main", "हैं": "hain", "है
           "रही": "rahi", "कभी": "kabhi", "अभी": "abhi", "सभी": "sabhi", "भाई": "bhai", "मुझे": "mujhe",
           "तुम": "tum", "हम": "hum", "आप": "aap", "बहुत": "bahut", "अच्छा": "accha", "ठीक": "theek", "लिए": "liye"}
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
-OTHER_SCRIPT = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")   # Urdu / Arabic letters
+OTHER_SCRIPT = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")   # Arabic-script output can be Hindi misrecognized by speech-to-text
 
 
 def has_hindi(text: str) -> bool:
@@ -35,7 +35,7 @@ def has_hindi(text: str) -> bool:
 
 
 def needs_roman(text: str) -> bool:
-    """Is this in a script that captions should show in Roman letters instead (Hindi, Urdu, Arabic, Russian-style,
+    """Is this in a script that captions should show in Roman letters instead (Hindi, Arabic, Russian-style,
     Greek or Korean letters)?"""
     text = text or ""
     return bool(DEVANAGARI.search(text) or OTHER_SCRIPT.search(text) or MORE_SCRIPTS.search(text))
@@ -145,8 +145,8 @@ def _word(w: str) -> str:
     return "".join(u[0] + (u[1] or "") for u in units)
 
 
-# ---------------------------------------------------------------- Urdu
-_UR_WORDS = {"ہے": "hai", "ہیں": "hain", "ہوں": "hoon", "ہو": "ho", "ہی": "hi", "یہ": "ye", "وہ": "wo", "کیا": "kya",
+# ---------------------------------------------------------------- Arabic-script fallback for Hindi misrecognition
+_ARABIC_WORDS = {"ہے": "hai", "ہیں": "hain", "ہوں": "hoon", "ہو": "ho", "ہی": "hi", "یہ": "ye", "وہ": "wo", "کیا": "kya",
              "کیوں": "kyun", "نہیں": "nahi", "نہ": "na", "میں": "main", "میرا": "mera", "میری": "meri", "میرے": "mere",
              "تو": "to", "کہ": "ke", "کی": "ki", "کا": "ka", "کے": "ke", "کو": "ko", "سے": "se", "پر": "par",
              "اور": "aur", "بھی": "bhi", "تھا": "tha", "تھی": "thi", "تھے": "the", "گیا": "gaya", "گئی": "gayi",
@@ -159,27 +159,27 @@ _UR_WORDS = {"ہے": "hai", "ہیں": "hain", "ہوں": "hoon", "ہو": "ho", "�
              "کام": "kaam", "دن": "din", "آج": "aaj", "کل": "kal", "بس": "bas", "شکریہ": "shukriya", "واہ": "wah",
              "گھر": "ghar", "ہوا": "hua", "ہوئی": "hui", "ہوئے": "hue", "اس": "us", "ان": "un", "جو": "jo", "جب": "jab",
              "تب": "tab", "مگر": "magar", "پاکستان": "Pakistan", "زندگی": "zindagi", "پیسے": "paise", "روپے": "rupay"}
-_UR_CONS = {"ب": "b", "پ": "p", "ت": "t", "ٹ": "t", "ث": "s", "ج": "j", "چ": "ch", "ح": "h", "خ": "kh", "د": "d",
+_ARABIC_CONS = {"ب": "b", "پ": "p", "ت": "t", "ٹ": "t", "ث": "s", "ج": "j", "چ": "ch", "ح": "h", "خ": "kh", "د": "d",
             "ڈ": "d", "ذ": "z", "ر": "r", "ڑ": "r", "ز": "z", "ژ": "zh", "س": "s", "ش": "sh", "ص": "s", "ض": "z",
             "ط": "t", "ظ": "z", "غ": "gh", "ف": "f", "ق": "q", "ک": "k", "ك": "k", "گ": "g", "ل": "l", "م": "m",
             "ن": "n", "ہ": "h", "ه": "h", "ة": "a", "ھ": "h"}
-_UR_MARKS = {"َ": "a", "ِ": "i", "ُ": "u", "ّ": "", "ْ": "", "ً": "an", "ٰ": "a"}
-_UR_DIGITS = {**{chr(0x06F0 + i): str(i) for i in range(10)}, **{chr(0x0660 + i): str(i) for i in range(10)}}
+_ARABIC_MARKS = {"َ": "a", "ِ": "i", "ُ": "u", "ّ": "", "ْ": "", "ً": "an", "ٰ": "a"}
+_ARABIC_DIGITS = {**{chr(0x06F0 + i): str(i) for i in range(10)}, **{chr(0x0660 + i): str(i) for i in range(10)}}
 
 
-def _urdu_word(w: str) -> str:
-    if w in _UR_WORDS:
-        return _UR_WORDS[w]
+def _arabic_word(w: str) -> str:
+    if w in _ARABIC_WORDS:
+        return _ARABIC_WORDS[w]
     out, prev_cons = [], False
     for i, ch in enumerate(w):
         first, last = i == 0, i == len(w) - 1
         nxt = w[i + 1] if i + 1 < len(w) else ""
-        if ch in _UR_MARKS:
-            out.append(_UR_MARKS[ch])
+        if ch in _ARABIC_MARKS:
+            out.append(_ARABIC_MARKS[ch])
             prev_cons = False
             continue
-        if ch in _UR_DIGITS:
-            out.append(_UR_DIGITS[ch])
+        if ch in _ARABIC_DIGITS:
+            out.append(_ARABIC_DIGITS[ch])
             prev_cons = False
             continue
         if ch == "ھ":                     # do chashmi he: the "h" of bh, ph, kh, chh...
@@ -214,7 +214,7 @@ def _urdu_word(w: str) -> str:
             continue
         if ch in "عء":
             continue
-        c = _UR_CONS.get(ch)
+        c = _ARABIC_CONS.get(ch)
         if c is None:
             out.append(ch)
             prev_cons = False
@@ -224,27 +224,27 @@ def _urdu_word(w: str) -> str:
             prev_cons = False
             continue
         if prev_cons and i == 1 or (prev_cons and i == 2 and w[1] == "ھ"):
-            out.append("a")               # the short "a" Urdu does not write after a word's first letter: گھر -> ghar
+            out.append("a")               # restore a short vowel omitted by the Arabic-script spelling
         out.append(c)
         prev_cons = True
     s = "".join(out)
     if re.fullmatch(r"[a-z]{2,}", s) and not re.search(r"[aeiou]", s):
-        s = s[:-1] + "a" + s[-1]          # no vowel at all: give it the one Urdu leaves out
+        s = s[:-1] + "a" + s[-1]          # no vowel at all: restore the short vowel omitted by the script
     return s
 
 
 _HINDI_RUN = r"[ऀ-ॿ]+"
-_URDU_RUN = r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]+"
+_ARABIC_RUN = r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]+"
 
 
 def to_roman(text: str) -> str:
-    """Every Hindi and Urdu word in the text spelled in Roman letters. Anything else is left exactly as it is."""
+    """Hindi and mistaken Arabic-script words are written in Roman letters; other text is left as it is."""
     text = text or ""
     if DEVANAGARI.search(text):
         text = re.sub(_HINDI_RUN, lambda m: _word(m.group(0)), text)
     if OTHER_SCRIPT.search(text):
         text = text.replace("،", ",").replace("؟", "?").replace("۔", ".")
-        text = re.sub(_URDU_RUN, lambda m: _urdu_word(m.group(0)), text)
+        text = re.sub(_ARABIC_RUN, lambda m: _arabic_word(m.group(0)), text)
     if MORE_SCRIPTS.search(text):
         import unicodedata
         text = "".join(unicodedata.normalize("NFD", ch) if "\u0370" <= ch <= "\u04FF" or "\u1F00" <= ch <= "\u1FFF" else ch for ch in text)
@@ -259,5 +259,5 @@ def unicodedata_nfc(s: str) -> str:
 
 
 def words(ws: list) -> list:
-    """Caption words ({'w', 's', 'e'}) with any Hindi or Urdu in Roman letters. Timings are untouched."""
+    """Caption words ({'w', 's', 'e'}) with Hindi or mistaken Arabic-script output in Roman letters."""
     return [dict(w, w=to_roman(w["w"])) if needs_roman(w.get("w", "")) else w for w in ws]

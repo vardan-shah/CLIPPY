@@ -1,4 +1,4 @@
-"""No limits by default on your own PeakCut: many recordings at once (each kept with its own creator), five videos
+"""No limits by default on your own Clippy: many recordings at once (each kept with its own creator), five videos
 at once, any number of creators. Runs against the code directly, with its own empty data folder."""
 import os, sys, tempfile
 os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="pc-lim-")
@@ -7,7 +7,7 @@ for k in ("PEAKCUT_MAX_LIVE_PER_USER", "PEAKCUT_MAX_JOBS_PER_USER", "PEAKCUT_MAX
     os.environ.pop(k, None)
 os.environ.update(DATABASE_URL="", PEAKCUT_MAX_LIVE="20")
 sys.path.insert(0, ".")
-from studio import auth, config, creators, ctx, db, live, load
+from studio import auth, config, creators, ctx, db, jobs, live, load
 db.init()
 fails = []
 def check(n, got, want=True):
@@ -15,6 +15,15 @@ def check(n, got, want=True):
     print(("PASS " if ok else "FAIL ") + n + ("" if ok else f"   got {got!r}")); ok or fails.append(n)
 
 check("five videos at once", config.MAX_ACTIVE_JOBS_PER_USER, 5)
+check("video options clamp the longest clip to 60 seconds", jobs.clean_options({"max_len": 180}), {"max_len": 60})
+jobs._jobs["job-12345678"] = {"id": "job-12345678", "clips": [{"id": "clip-12345678", "start": 0, "end": 20}]}
+try:
+    jobs.request_render("job-12345678", "clip-12345678", {"start": 0, "end": 61})
+    overlong = "accepted"
+except ValueError as e:
+    overlong = str(e)
+jobs._jobs.pop("job-12345678", None)
+check("re-making a clip cannot exceed 60 seconds", overlong, "A clip can be 3 to 60 seconds long.")
 check("no cap on recordings, video length, recording length, storage, uploads or creators",
       all(x >= 10 ** 6 for x in (config.MAX_LIVE_PER_USER, config.MAX_VIDEO_HOURS, config.MAX_LIVE_HOURS, config.MAX_USER_GB,
                                  config.MAX_UPLOAD_MB, config.MAX_CREATORS)))

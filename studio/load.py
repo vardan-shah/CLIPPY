@@ -73,7 +73,13 @@ def _watch():
             time.sleep(1)
             try:
                 _state["cpu"] = 0.55 * _state["cpu"] + 0.45 * _mac_cpu_percent()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 _state["ram_free"] = _ram_free_gb()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 if time.time() - _state["at"] > 15:
                     _state["disk_free"] = shutil.disk_usage(config.DATA_DIR).free / 1e9
                     _state["at"] = time.time()

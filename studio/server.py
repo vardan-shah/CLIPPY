@@ -34,7 +34,7 @@ def _quiet(fn):
         print(f"  {e}", flush=True)
 
 
-app = FastAPI(title="PeakCut", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Clippy", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
 OPEN = ("/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
 PAGES = {"/": "landing.html", "/login": "auth.html", "/signup": "auth.html", "/reset": "reset.html",
@@ -73,7 +73,7 @@ def _startup():
     live.start()
     posting.start()
     from . import updates
-    updates.start()                  # looks for a newer PeakCut every minute, in the background
+    updates.start()                  # looks for a newer Clippy every minute, in the background
 
 
 # ================================================================ the gate: who is asking, and are they allowed
@@ -265,7 +265,7 @@ def _ip(request: Request) -> str:
 
 
 def _from_here(req, must_say=False) -> bool:
-    """Did this change come from PeakCut's own page, and not from another website?
+    """Did this change come from Clippy's own page, and not from another website?
 
     The browser's own answer is trusted first: it marks every request "same-origin" or not, and a web page cannot
     fake that mark. Comparing the page's address with the address the request arrived at is only the fallback,
@@ -1247,7 +1247,7 @@ def clip_now(jid: str, body: dict = Body(...)):
     if len(s.manual) >= 3:
         raise HTTPException(429, "Give it a moment: your last clips are still being made.")
     try:
-        s.clip_last(max(5, min(180, float(body.get("seconds", 30)))))
+        s.clip_last(max(5, min(60, float(body.get("seconds", 30)))))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
     return {"ok": True}
@@ -1342,7 +1342,7 @@ def remove_account(aid: str):
     return {"ok": True}
 
 
-# ---------------------------------------------------------------- connecting YouTube, Instagram and TikTok
+# ---------------------------------------------------------------- connecting YouTube and Instagram
 # Connect sends the browser to the platform's own sign-in page; the platform sends it back here, and the person lands
 # on Settings, Connected apps, with the account added (or a message saying what went wrong).
 def _back(**q):
@@ -1394,9 +1394,9 @@ def public_clip(token: str):
     return FileResponse(f, media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
 
 
-# ---------------------------------------------------------------- where PeakCut keeps everything (Settings, Storage)
+# ---------------------------------------------------------------- where Clippy keeps everything (Settings, Storage)
 def _on_this_computer(request: Request) -> bool:
-    """Is the person sitting at the computer PeakCut runs on? Only then can a folder window be opened for them."""
+    """Is the person sitting at the computer Clippy runs on? Only then can a folder window be opened for them."""
     host = request.client.host if request.client else ""
     return host in ("127.0.0.1", "::1", "localhost") and not config.env("PEAKCUT_TRUST_PROXY")
 
@@ -1413,7 +1413,7 @@ def storage_open(request: Request):
     from . import storage
     _admin(request)
     if not _on_this_computer(request):
-        raise HTTPException(400, "The folder can only be opened on the computer PeakCut runs on.")
+        raise HTTPException(400, "The folder can only be opened on the computer Clippy runs on.")
     try:
         storage.open_folder()
     except OSError as e:
@@ -1426,7 +1426,7 @@ def storage_pick(request: Request):
     from . import storage
     _admin(request)
     if not _on_this_computer(request):
-        raise HTTPException(400, "Type the folder's path instead: a folder window can only be shown on the computer PeakCut runs on.")
+        raise HTTPException(400, "Type the folder's path instead: a folder window can only be shown on the computer Clippy runs on.")
     return {"path": storage.pick_folder()}
 
 

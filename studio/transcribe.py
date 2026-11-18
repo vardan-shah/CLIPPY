@@ -66,7 +66,7 @@ def _sherpa():
 
 
 def _load_sherpa():
-    """On Windows a file whose full path is over 260 characters cannot be loaded, which happens when PeakCut sits in a
+    """On Windows a file whose full path is over 260 characters cannot be loaded, which happens when Clippy sits in a
     deep folder ("DLL load failed ... The filename or extension is too long"). Then the library is loaded through
     the folder's short name (C:\\Users\\...\\SITE-P~1), which points at the same files, or else from a copy of it
     in a short folder (AppData\\Local\\PeakCut\\lib), made once."""
@@ -123,7 +123,7 @@ def _load_sherpa():
             return mod
     except OSError:
         pass
-    raise RuntimeError("PeakCut is in a folder too deep for Windows to load the speech model from. Move the PeakCut "
+    raise RuntimeError("Clippy is in a folder too deep for Windows to load the speech model from. Move the Clippy "
                        "folder somewhere short, like C:\\peakcut, and start it again.") from first
 
 

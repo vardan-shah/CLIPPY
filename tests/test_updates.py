@@ -48,10 +48,10 @@ def fake_get(url, timeout=None, headers=None, params=None):
     return gh["compare"] or R(403, {"message": "rate limit"})
 updates.httpx.get = fake_get
 here = updates.RUNNING
-check("the version PeakCut started on is remembered", len(here), 40)
+check("the version Clippy started on is remembered", len(here), 40)
 NEWER, NEWEST = "1" * 40, "2" * 40
 two = R(200, {"ahead_by": 2, "commits": [
-    {"sha": "aaaaaaa1", "commit": {"message": "Connect TikTok in one click\n\nlong text", "committer": {"date": "2026-11-15T10:00:00Z"}}},
+    {"sha": "aaaaaaa1", "commit": {"message": "Improve game stream clipping\n\nlong text", "committer": {"date": "2026-11-15T10:00:00Z"}}},
     {"sha": NEWER, "commit": {"message": "Captions always in English", "committer": {"date": "2026-11-16T10:00:00Z"}}}]})
 
 gh.update(top=here)
@@ -61,9 +61,9 @@ check("it goes to the address git itself uses, not the API", asked[0], f"https:/
 
 asked.clear(); gh.update(top=NEWER, compare=two)
 got = updates.check(force=True)
-check("a new commit is noticed while PeakCut is running, with no restart", (got["behind"], got["latest"], got["current"], got["restart"]), (2, "1111111", here[:7], False))
+check("a new commit is noticed while Clippy is running, with no restart", (got["behind"], got["latest"], got["current"], got["restart"]), (2, "1111111", here[:7], False))
 check("newest change first, one line each, with its date", [(n["title"], n["date"]) for n in got["notes"]],
-      [("Captions always in English", "2026-11-16"), ("Connect TikTok in one click", "2026-11-15")])
+      [("Captions always in English", "2026-11-16"), ("Improve game stream clipping", "2026-11-15")])
 asked.clear()
 for _ in range(5):
     updates.check(force=True)

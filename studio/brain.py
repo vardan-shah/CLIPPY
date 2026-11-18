@@ -65,9 +65,9 @@ Rules:
 - description: one or two sentences.
 - hashtags: 5 tags without the # sign.
 - highlight_words: 3 to 6 single words spoken in the clip that carry the punch.
-- Write hook, title, description, hashtags and highlight_words in English. If the video is in Hindi or Urdu,
-  you may write them the way people type Hindi and Urdu in Roman letters (Hinglish: "yaar ye kya hai"), never
-  in Devanagari or Urdu script. For any other language, write them in English.
+- Write hook, title, description, hashtags and highlight_words in English. If the speech is Hindi or Hinglish,
+  keep it in natural Roman Hinglish ("yaar ye kya hai"), preserving English words in mixed sentences. Never write
+  Hindi in Devanagari or Arabic script. For any other language, write in English.
 - category: one of funny, fail, clutch, rage, shock, take, story, other.
 - reason: one short sentence on why it works.
 
@@ -514,7 +514,7 @@ def judge_signals(z, chat, start, now, unit="messages", timeout=None):
 
 
 FIX_SCHEMA = {"type": "ARRAY", "items": {"type": "STRING"}}
-# Languages whose captions keep the words that were said: English as it is, Hindi and Urdu in Roman letters.
+# English and Hindi captions keep the words that were said. Arabic-script output is retried as Hindi in transcribe.py.
 KEEP_LANGS = ("en", "hi", "ur")
 
 
@@ -557,10 +557,9 @@ def translate_caption_words(words: list, lang: str = "", title: str = "") -> lis
 
 
 def english_captions(words: list, lang: str, title: str = "", youtube_english=None) -> list:
-    """Captions for a clip, always in English letters:
-    English stays as it was said, Hindi and Urdu become Roman letters (the same words, tidied by the AI), and any
-    other language is translated into English: YouTube's own English captions first, then the AI. With neither,
-    the words as heard (Arabic and similar scripts still spelled in Roman letters)."""
+    """Captions stay in English letters: English stays as spoken, Hindi stays Hindi in Roman Hinglish, and other
+    languages are translated into English. YouTube's English captions are used first, then the AI; if neither is
+    available, script fallbacks keep the captions readable."""
     if not needs_translation(lang):
         return fix_caption_words(words, title, lang)
     if youtube_english:
@@ -577,9 +576,8 @@ def english_captions(words: list, lang: str, title: str = "", youtube_english=No
 
 
 def fix_caption_words(words: list, title: str = "", lang: str = "") -> list:
-    """Captions ready to burn in: tidied by the AI, and Hindi or Urdu in Roman letters (Hinglish), never in their
-    own script. The same words at the same moments: spelled differently, never translated. Any Hindi the AI did
-    not turn into Roman letters (or all of it, with no AI) is spelled out by roman.py."""
+    """Captions ready to burn in: Hindi is written in Roman Hinglish, keeping the same words and timing. Hindi the
+    AI leaves in Devanagari or Arabic script is transliterated by roman.py."""
     return roman.words(_fix_caption_words(words, title, lang))
 
 
@@ -592,13 +590,12 @@ def _fix_caption_words(words: list, title: str = "", lang: str = "") -> list:
     """
     if len(words) < 3:
         return words
-    # The Hindi and Urdu rule is only given for those videos. On an English video it is one more thing a small
+    # The Hinglish rule is only given for those videos. On an English video it is one more thing a small
     # model can get wrong (turning English into something else).
     hindi = (lang or "").lower().startswith(("hi", "ur")) or any(roman.needs_roman(w["w"]) for w in words)
-    hinglish = ("If a word is Hindi or Urdu (in Devanagari or Urdu script, or already "
-                "in Roman letters), write that same word in Roman letters the way people type Hindi in chats (Hinglish): "
-                "'चूना' -> 'choona', 'जो' -> 'jo', 'उसको' -> 'usko', 'یار' -> 'yaar', 'کیا' -> 'kya'. Never translate it into "
-                "English and never leave Devanagari or Urdu script. ") if hindi else ""
+    hinglish = ("If a word is Hindi (in Devanagari or misread into Arabic script, or already in Roman letters), "
+                "write that same word in natural Roman Hinglish: 'चूना' -> 'choona', 'जो' -> 'jo', 'उसको' -> 'usko'. "
+                "Preserve English words in mixed sentences. Do not translate Hindi or output Devanagari or Arabic script. ") if hindi else ""
     numbered = "\n".join(f"{i}: {_safe(w['w'], 60)}" for i, w in enumerate(words))
     prompt = (
         "These are the words of a short video clip's captions, one per line with its number, written by a speech "

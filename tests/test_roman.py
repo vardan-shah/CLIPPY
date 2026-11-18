@@ -29,8 +29,8 @@ check("without AI, Hindi captions come out in Roman letters", text(out) == "are 
 check("...with every word at its own time", [(w["s"], w["e"]) for w in out] == [(w["s"], w["e"]) for w in src])
 check("short clips are spelled out too", text(brain.fix_caption_words(ws("जो उसको"), "")) == "jo usko")
 out = text(brain.fix_caption_words(ws("یار یہ کیا ہے بھائی"), ""))
-check("without AI, Urdu captions come out in Roman letters too", out == "yaar ye kya hai bhai", out)
-check("Urdu punctuation and digits become plain ones", roman.to_roman("ہاں، ۱۰۰۰ روپے؟") == "haan, 1000 rupay?", roman.to_roman("ہاں، ۱۰۰۰ روپے؟"))
+check("Arabic-script Hindi misreads come out in Roman Hinglish", out == "yaar ye kya hai bhai", out)
+check("Arabic-script punctuation and digits become plain ones", roman.to_roman("ہاں، ۱۰۰۰ روپے؟") == "haan, 1000 rupay?", roman.to_roman("ہاں، ۱۰۰۰ روپے؟"))
 
 # ---- with the AI: its Hinglish is used, a translation is not, and other scripts/languages are handled
 answers = {}
@@ -57,7 +57,7 @@ check("an answer of the wrong length keeps the words, in Roman letters", text(br
 c = brain._tidy({"hook": "चूना लगा", "title": "उसको चूना", "highlight_words": ["चूना", "boss"], "score": 90}, 1, 20)
 check("hook, title and highlighted words are in Roman letters", (c["hook"], c["title"], c["highlight_words"]) == ("CHUNA LAGA", "usko chuna", ["chuna", "boss"]), str(c))
 
-# ---- the language rule: English stays, Hindi/Urdu in Roman letters, everything else translated into English
+# ---- the language rule: English stays, Hindi is Roman Hinglish, everything else is translated into English
 check("which languages are translated", [brain.needs_translation(x) for x in ("en", "en-US", "hi", "ur", "es", "ar", "")]
       == [False, False, False, False, True, True, False])
 def by_purpose(prompt, schema=None, purpose=""):

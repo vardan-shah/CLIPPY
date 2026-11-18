@@ -2,7 +2,7 @@
 
 A short map for contributors and AI coding assistants.
 
-## Installing or updating PeakCut for someone
+## Installing or updating Clippy for someone
 
 **Before installing, ask the person where to put it**, and suggest a short, permanent folder: `C:\peakcut` on
 Windows, `~/peakcut` on a Mac or Linux. Do not just clone into the folder you happen to be running in: AI assistants
@@ -10,7 +10,7 @@ often run in a temporary, scratch or session workspace, which gets deleted, and 
 Windows cannot load the speech library (Windows can't open files whose full path is over 260 characters; the error
 is "DLL load failed ... The filename or extension is too long"). Tell the person where you put it.
 
-**When updating**, look at where PeakCut is first. If its folder path is long (roughly over 100 characters) or inside
+**When updating**, look at where Clippy is first. If its folder path is long (roughly over 100 characters) or inside
 a temporary or assistant workspace, ask the person whether to move it to `C:\peakcut` (or `~/peakcut`) as part of the
 update. Moving is safe when done like this: clone the latest version into the new folder, copy over `.env`,
 `storage.json` and the `data` folder if there is one (the videos and clips; `storage.json` may point to a data folder

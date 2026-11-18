@@ -356,8 +356,8 @@ def request_render(jid, cid, changes: dict):
         new["end"] = min(new["end"], clip["src_end"])
     if not (math.isfinite(new["start"]) and math.isfinite(new["end"])) or new["start"] < 0:
         raise ValueError("Those times aren't valid.")
-    if not 3 <= new["end"] - new["start"] <= 180:
-        raise ValueError("A clip can be 3 to 180 seconds long.")
+    if not 3 <= new["end"] - new["start"] <= 60:
+        raise ValueError("A clip can be 3 to 60 seconds long.")
     for k in ("hook", "title", "description", "style", "layout"):
         if k in changes:
             new[k] = str(changes[k])[:{"hook": 60, "title": 100, "description": 2000}.get(k, 20)]
@@ -416,7 +416,7 @@ def _caption_words(job, clip, words, off):
             clip.update(fixed_words=raw, fixed_for=span)
         except Exception:  # noqa: BLE001 - captions still render with the words as heard
             pass
-    # the last word on it: whatever was said, nothing is drawn in Hindi or Urdu script
+    # Keep Hindi captions readable even when speech recognition returns a non-Latin script.
     return [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
 
 

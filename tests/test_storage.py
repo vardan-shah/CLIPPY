@@ -1,9 +1,9 @@
-"""PeakCut's folder: said plainly when its drive is full, and movable. A move is chosen in the dashboard and done at
+"""Clippy's folder: said plainly when its drive is full, and movable. A move is chosen in the dashboard and done at
 the next start, before anything is open. Uses its own temporary folders; nothing else is touched."""
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
 base = Path(tempfile.mkdtemp(prefix="pc-stor-"))
-old, new, pointer = base / "old-data", base / "bigger drive" / "PeakCut", base / "storage.json"
+old, new, pointer = base / "old-data", base / "bigger drive" / "Clippy", base / "storage.json"
 os.environ.pop("PEAKCUT_DATA", None); os.environ.pop("PEAKCUT_MODELS", None)
 os.environ.update(DATABASE_URL="", PEAKCUT_STORAGE_FILE=str(pointer), PEAKCUT_ACCOUNTS="0", PEAKCUT_PUBLIC_URL="http://127.0.0.1:8765")
 pointer.write_text(json.dumps({"path": str(old)}))
@@ -28,9 +28,9 @@ ORIGIN = {"Origin": "http://127.0.0.1:8765"}
 # ---- what the Storage page shows
 storage._used["at"] = 0
 s = c.get("/api/storage").json()
-check("it shows the folder, how much PeakCut uses, and the room on the drive", (s["path"], storage.used_bytes(), s["free_gb"] > 0, s["fixed"], s["pending"]),
+check("it shows the folder, how much Clippy uses, and the room on the drive", (s["path"], storage.used_bytes(), s["free_gb"] > 0, s["fixed"], s["pending"]),
       (str(old.resolve()), lambda n: n >= 5000, True, False, ""))
-check("a folder window is only offered on the computer PeakCut runs on", (s["local"], c.post("/api/storage/open", headers=ORIGIN).status_code), (False, 400))
+check("a folder window is only offered on the computer Clippy runs on", (s["local"], c.post("/api/storage/open", headers=ORIGIN).status_code), (False, 400))
 
 # ---- a full drive is explained, not just refused
 load._state.update(disk_free=0.4, at=10 ** 12)
@@ -49,12 +49,12 @@ check("a folder inside the current one", put({"path": str(old / "inner")}).statu
 check("from another website", c.put("/api/storage", json={"path": str(new)}, headers={"Origin": "https://evil.example"}).status_code, 403)
 r = put({"path": str(new), "move": True})
 check("a good folder is accepted for the next start", (r.status_code, r.json()["pending"], r.json()["path"]), (200, str(new.resolve()), str(old.resolve())))
-check("nothing is moved while PeakCut is running", (old / "users" / "u_local" / "jobs" / "job1" / "clip01.mp4").is_file() and not (new / "users").exists())
+check("nothing is moved while Clippy is running", (old / "users" / "u_local" / "jobs" / "job1" / "clip01.mp4").is_file() and not (new / "users").exists())
 check("undo forgets the choice", (put({"cancel": True}).json()["pending"], json.loads(pointer.read_text())), ("", {"path": str(old.resolve())}))
 put({"path": str(new), "move": True})
 db.engine.dispose()
 
-# ---- the next start: everything moves, then PeakCut carries on from the new folder
+# ---- the next start: everything moves, then Clippy carries on from the new folder
 env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 code = "from studio import config; print('USING', config.DATA_DIR)"
 out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, encoding="utf-8", errors="replace")

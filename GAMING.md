@@ -1,6 +1,6 @@
 # Gaming mode
 
-PeakCut was built for talk: it reads a transcript and picks moments from it. A
+Clippy was built for talk: it reads a transcript and picks moments from it. A
 gaming stream is mostly not talk — it is a game, a facecam, and a streamer
 reacting. Three changes make it work on those streams.
 
@@ -65,7 +65,7 @@ as messages.
 
 ## 3. The facecam is found, and the game fills the screen
 
-A gaming stream is a 16:9 game with a small webcam picture in one corner. PeakCut's
+A gaming stream is a 16:9 game with a small webcam picture in one corner. Clippy's
 "blur" layout puts the whole 16:9 frame into a band with blurred fill above and
 below — fine for a talking head, poor for a game, where the play is a thin strip
 of the picture.
@@ -74,7 +74,7 @@ The new **gameplay** layout fills the 1080x1920 frame with the game (centre
 cropped, the same as "Fill screen") and puts the webcam in the top corner of it,
 so the viewer sees the play and the face at once.
 
-To do that, PeakCut has to know where the webcam is. `studio/facecam.py` finds it
+To do that, Clippy has to know where the webcam is. `studio/facecam.py` finds it
 by the one thing a webcam always has and a game almost never has: **a straight
 border that stays in the same place in every frame**. A wall in the game moves, a
 HUD bar changes, the edge of the webcam box does not move at all.
@@ -126,7 +126,7 @@ sponsor reading.
 
 ## What it does not do
 
-- **It does not watch the stream.** PeakCut reads words, loudness and chat. One frame
+- **It does not watch the stream.** Clippy reads words, loudness and chat. One frame
   is looked at once, to find the webcam; it cannot tell that a headshot was good,
   only that the streamer said something.
 - **It does not know the game's story.** "He got the polaroid photo" means
