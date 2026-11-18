@@ -908,7 +908,7 @@ const when = t => new Date(t * 1000).toLocaleString([], {month:"short", day:"num
 const opts = (map, val) => Object.entries(map).map(([k, v]) => `<option value="${esc(k)}"${String(k) === String(val) ? " selected" : ""}>${esc(v)}</option>`).join("");
 
 async function api(path, opt) {
-  if (location.protocol === "file:") throw new Error("Clippy needs its local server. In Terminal, run `python3 -m studio.server` from the Clipper folder, then open http://127.0.0.1:8765.");
+  if (location.protocol === "file:") throw new Error("Clippy is open as a file, so its server is unavailable. Double-click start-clippy.command in the project folder, then open http://127.0.0.1:8765.");
   const r = await fetch(path, opt);
   if (r.status === 401) { location.href = "/login"; throw new Error("Please sign in."); }
   if (!r.ok) { let d = r.statusText; try { d = (await r.json()).detail || d; } catch {} throw new Error(typeof d === "string" ? d : "Something went wrong"); }

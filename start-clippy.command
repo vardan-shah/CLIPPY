@@ -47,7 +47,7 @@ if ! .venv/bin/python -c 'from studio.transcribe import model_ready; raise Syste
   .venv/bin/python -m studio.fetch_model
 fi
 
-APP_URL="$(.venv/bin/python -c 'from studio import config; print(config.PUBLIC_URL)')"
+APP_URL="$(.venv/bin/python -c 'from studio import config; print(f"http://127.0.0.1:{config.PORT}")')"
 (
   for i in {1..60}; do
     if curl -fsS "$APP_URL/healthz" >/dev/null 2>&1; then

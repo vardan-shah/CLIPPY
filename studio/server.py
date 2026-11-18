@@ -687,7 +687,7 @@ def get_job(jid: str):
 
 @app.get("/api/preview")
 def link_preview(request: Request, url: str = ""):
-    url = url.strip()[:500]
+    url = media.clean_url(url)[:500]
     if not media.site_allowed(url):
         raise HTTPException(400, "Paste a full link to a YouTube, Twitch or Kick video.")
     try:
@@ -711,7 +711,7 @@ def create_from_link(body: dict = Body(...)):
     _need_verified()
     _quota()
     _throttle("newjob:" + ctx.uid(), 30, 600)
-    url = str(body.get("url", "")).strip()[:500]
+    url = media.clean_url(body.get("url", ""))[:500]
     if not media.site_allowed(url):
         raise HTTPException(400, "Paste a full link to a YouTube, Twitch or Kick video.")
     try:

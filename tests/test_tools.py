@@ -7,7 +7,7 @@ os.environ.pop("PEAKCUT_MODELS", None)          # this test makes and removes a 
 os.environ["PEAKCUT_ASR_MODEL"] = "test-transducer"
 os.environ.update(PEAKCUT_AI_PROVIDER="gemini", PEAKCUT_AI_MODELS="gemini-old", PEAKCUT_AI_KEY="test-key-123456")
 sys.path.insert(0, ".")
-from studio import ai, config, fetch_model, safe, tools
+from studio import ai, config, fetch_model, media, render, safe, tools
 fails = []
 def check(n, got, want=True):
     ok = want(got) if callable(want) else got == want
@@ -34,6 +34,40 @@ os.environ["PEAKCUT_FFMPEG_DIR"] = hidden
 tools._places = real_places
 check("PEAKCUT_FFMPEG_DIR is looked in first", tools._places()[0], Path(hidden))
 tools.setup()
+
+# ---- captions need FFmpeg's ASS subtitle filter
+check("pasted link keeps its URL and drops the trailing Clippy message",
+      media.clean_url("https://youtu.be/o3xA1J8BoHs?si=kT9q4WtQRjpeW1ed Clippy needs its local server."),
+      "https://youtu.be/o3xA1J8BoHs?si=kT9q4WtQRjpeW1ed")
+check("URL cleanup does not allow an unknown host", media.site_allowed("https://youtube.com.evil.example/video"), False)
+
+from types import SimpleNamespace
+real_run = render.subprocess.run
+render._ass_ok = None
+render.subprocess.run = lambda *a, **k: SimpleNamespace(returncode=0, stdout=" ..C ass V->V Render ASS", stderr="")
+render._require_ass_filter()
+check("caption renderer accepts FFmpeg with ASS support", render._ass_ok)
+render._ass_ok = None
+render.subprocess.run = lambda *a, **k: SimpleNamespace(returncode=0, stdout=" ..C scale V->V Scale video", stderr="")
+try:
+    render._require_ass_filter()
+    missing_filter = ""
+except RuntimeError as e:
+    missing_filter = str(e)
+render.subprocess.run = real_run
+render._ass_ok = None
+check("missing ASS support explains how to fix FFmpeg", "libass" in missing_filter)
+real_ffmpeg = render.config.FFMPEG
+render.config.FFMPEG = "/definitely-not-a-real-ffmpeg"
+render._ass_ok = None
+render.subprocess.run = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError())
+try:
+    render._require_ass_filter()
+    missing_ffmpeg = ""
+except RuntimeError as e:
+    missing_ffmpeg = str(e)
+render.subprocess.run, render.config.FFMPEG, render._ass_ok = real_run, real_ffmpeg, None
+check("missing FFmpeg explains that the executable was not found", "not found" in missing_ffmpeg)
 
 # ---- the speech model
 d = config.ASR_MODEL_DIR

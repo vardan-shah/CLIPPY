@@ -28,6 +28,12 @@ class YouTubeBlocked(RuntimeError):
     pass
 
 
+def clean_url(raw: str) -> str:
+    """Keep a pasted link and discard any message or punctuation pasted after it."""
+    match = re.search(r"https?://[^\s<>\"'`]+", str(raw or ""), re.I)
+    return match.group(0).rstrip(".,;:!?)]}") if match else ""
+
+
 def is_youtube(url: str) -> bool:
     from urllib.parse import urlparse
     host = (urlparse((url or "").strip()).hostname or "").lower()
@@ -70,7 +76,7 @@ def site_allowed(url: str) -> bool:
     """Links are fetched by the server, so only known video sites are accepted (never arbitrary addresses)."""
     from urllib.parse import urlparse
     try:
-        u = urlparse(url.strip())
+        u = urlparse(clean_url(url))
     except ValueError:
         return False
     host = (u.hostname or "").lower()
@@ -117,6 +123,7 @@ def _biggest(job_dir: Path, stem: str) -> Path:
 
 def info(url: str) -> dict:
     """Title, channel and length, without downloading anything."""
+    url = clean_url(url)
     with _youtube_guard(url), _ydl({}) as ydl:
         i = ydl.extract_info(url, download=False)
     return {"title": i.get("title") or "", "uploader": i.get("uploader") or i.get("channel") or "",
@@ -129,6 +136,7 @@ def youtube_words(url: str):
     has none. Only the transcript in the language that was spoken is used, never a translation."""
     if not is_youtube(url):
         return None
+    url = clean_url(url)
     import json
     with _youtube_guard(url), _ydl({}) as ydl:
         i = ydl.extract_info(url, download=False)
@@ -148,6 +156,7 @@ def youtube_english_words(url: str):
     otherwise YouTube's own translation of its transcript. Word list like youtube_words, or None."""
     if not is_youtube(url):
         return None
+    url = clean_url(url)
     import json
     with _youtube_guard(url), _ydl({}) as ydl:
         i = ydl.extract_info(url, download=False)
@@ -192,7 +201,7 @@ _PREVIEWS: dict = {}
 def preview(url: str) -> dict:
     """What the user will get from a link, checked before any work starts. The thumbnail comes back inline
     (the page may only load images from this site). Cached, so retyping a link costs nothing."""
-    url = url.strip()
+    url = clean_url(url)
     if url in _PREVIEWS:
         return _PREVIEWS[url]
     i = info(url)
@@ -244,6 +253,7 @@ def save_thumb(job_dir: Path, url: str = "", video: Path = None) -> bool:
 
 def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
     """Audio only: a few seconds even for long videos, and all the AI needs to pick clips."""
+    url = clean_url(url)
     def hook(d):
         total = d.get("total_bytes") or d.get("total_bytes_estimate")
         if on_progress and d.get("status") == "downloading" and total:
@@ -257,6 +267,7 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
 
 def download(url: str, job_dir: Path, height=720) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
+    url = clean_url(url)
     with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
                                     "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
         ydl.download([url])
@@ -266,6 +277,7 @@ def download(url: str, job_dir: Path, height=720) -> Path:
 def download_section(url: str, out_dir: Path, stem: str, start: float, end: float, height=720, exact=False) -> Path:
     """Just one stretch of the video. The cut lands on a keyframe, so find_offset() pins the true start; with
     exact=True the cut is made at exactly `start` instead (slower), for when there is nothing to match against."""
+    url = clean_url(url)
     from yt_dlp.utils import download_range_func
     out_dir.mkdir(parents=True, exist_ok=True)
     opts = {"format": _video_format(height), "merge_output_format": "mp4", "outtmpl": str(out_dir / (stem + ".%(ext)s")),

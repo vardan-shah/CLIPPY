@@ -2,6 +2,7 @@
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -261,6 +262,32 @@ def _hook_y(layout, hook_y, facecam=None):
 
 
 _qsv_ok = None
+_ass_ok = None
+
+
+def _require_ass_filter():
+    """Fail before a job renders if its configured FFmpeg cannot burn captions."""
+    global _ass_ok
+    if _ass_ok is None:
+        try:
+            p = subprocess.run([config.FFMPEG, "-hide_banner", "-filters"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", creationflags=NO_WINDOW, timeout=15)
+            _ass_ok = p.returncode == 0 and any(len(parts := line.split()) > 1 and parts[1] == "ass"
+                                                for line in (p.stdout + p.stderr).splitlines())
+        except (OSError, subprocess.TimeoutExpired):
+            _ass_ok = False
+    if not _ass_ok:
+        if not shutil.which(config.FFMPEG):
+            reason = f"FFmpeg was not found at {config.FFMPEG}."
+        else:
+            reason = "This FFmpeg build does not include ASS subtitle support (libass)."
+        if sys.platform == "darwin":
+            reason += " Install it with brew install ffmpeg-full, then restart Clippy."
+        else:
+            reason += " Install an FFmpeg build with libass subtitle support, then restart Clippy."
+        raise RuntimeError(reason)
+
+
 RENDER_SECONDS = 600      # one clip's video encode; far beyond normal, so a frozen encoder is stopped, not waited on
 
 
@@ -294,7 +321,7 @@ def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layo
     for f in config.FONTS_DIR.glob("*.ttf"):
         shutil.copyfile(f, work / "f" / f.name)
     fc = _filter(layout, fg_h, face) + f"[v0]ass=filename={name}.ass:fontsdir=f[v]"
-    base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
+    base = [config.FFMPEG, "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]
     encoders = []
