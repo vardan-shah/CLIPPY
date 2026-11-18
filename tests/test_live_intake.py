@@ -95,10 +95,28 @@ def accepts_twitch_and_kick():
     assert live.normalize("kick.com/streamer") == "https://kick.com/streamer"
 
 
+def publishes_live_progress():
+    directory = DATA / "publish-session"
+    directory.mkdir()
+    recording = live.Session({"id": "publish", "user": "u_local", "dir": str(directory), "creator": "creator1",
+                              "title": "Stream", "uploader": "Streamer", "clips": [],
+                              "source": {"name": "Streamer live"}, "ai": {}}, {})
+    recording.words = [{"w": word, "s": i * 0.5, "e": i * 0.5 + 0.4} for i, word in enumerate(
+        "we found the game and now it is working live for every viewer".split())]
+    recording.samples = 20 * live.SR
+    recording.t_done = 20
+    recording.db = [-25.0] * 20
+    with ctx.as_user("u_local"):
+        recording._publish()
+    assert recording.job["live"]["elapsed"] == 20
+    assert recording.job["live"]["words"] == len(recording.words)
+
+
 check("pasted live link reuses the creator's active recording", reuses_active)
 check("pasted live link starts the creator recorder", starts_live_recording)
 check("live link without a creator explains how to proceed", requires_creator)
 check("stopping a recording makes a final AI check", checks_final_window_after_stop)
 check("Twitch and Kick live channel links are accepted", accepts_twitch_and_kick)
+check("live status publishes transcript and recording progress", publishes_live_progress)
 shutil.rmtree(DATA, ignore_errors=True)
 sys.exit(1 if failed else 0)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import alerts, auth, brain, config, creators, ctx, facecam, games, jobs, load, media, transcribe, usage
+from . import alerts, auth, brain, config, creators, ctx, facecam, games, jobs, load, media, roman, transcribe, usage
 
 # ":username!user@host PRIVMSG #channel :the message"
 _NICK = re.compile(r"(?m)^:([A-Za-z0-9_]{2,25})!")
