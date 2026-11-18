@@ -717,13 +717,29 @@ def create_from_link(body: dict = Body(...)):
     creator = str(body.get("creator") or "") or None
     if creator and not creators.get(creator):
         raise HTTPException(404, "No such creator")
-    seen = media._PREVIEWS.get(url)  # the preview tells us whether this is a live stream
+    seen = media._PREVIEWS.get(url)
+    if not seen or not seen.get("is_live"):
+        try:
+            seen = _lookup(media.preview, url, True)  # a scheduled stream may have gone live since its preview
+        except media.YouTubeBlocked as e:
+            raise HTTPException(503, str(e))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(422, "Couldn't open that video. Check the link is public and complete.")
     if seen and seen.get("is_live"):
-        if not creator:
-            raise HTTPException(400, "This link is a live stream. Select a creator workspace to record it.")
-        active = live.active_for(creator)
+        if creator:
+            active = live.active_for(creator)
+        else:
+            uploader = str(seen.get("uploader") or "").strip().casefold()
+            active = next((s for s in live.active_mine()
+                           if uploader and str(s.job.get("uploader") or "").strip().casefold() == uploader), None)
         if active:
             return jobs.public(active.job)
+        if not creator:
+            raise HTTPException(400, "This link is a live stream. Select a creator workspace to start recording it.")
         try:
             return jobs.public(live.start_session(creators.get(creator), url))
         except ValueError as e:

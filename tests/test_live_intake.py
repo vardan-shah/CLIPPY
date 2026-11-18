@@ -36,10 +36,11 @@ job = {"id": "20261118-162457-e5b9d5b262", "kind": "live", "creator": "creator1"
 media._PREVIEWS[url] = {"is_live": True, "title": "Stream", "uploader": "Streamer", "duration": 0}
 
 
-def invoke(active, creator_id="creator1"):
+def invoke(active, creator_id="creator1", active_mine=()):
     with (patch.object(server, "_need_verified"), patch.object(server, "_quota"),
           patch.object(server, "_throttle"), patch.object(creators, "get", return_value=creator),
-          patch.object(live, "active_for", return_value=active)):
+          patch.object(live, "active_for", return_value=active),
+          patch.object(live, "active_mine", return_value=list(active_mine))):
         with ctx.as_user("u_local"):
             return server.create_from_link({"url": url, "creator": creator_id})
 
@@ -56,6 +57,23 @@ def starts_live_recording():
         result = invoke(None)
     start.assert_called_once_with(creator, url)
     assert result["kind"] == "live"
+
+
+def refreshes_stale_live_preview():
+    media._PREVIEWS[url] = {"is_live": False, "title": "Upcoming stream", "uploader": "Streamer", "duration": 0}
+    active = type("Active", (), {"job": job})()
+    with patch.object(media, "info", return_value={"is_live": True, "kind": "video", "title": "Stream",
+                                                     "uploader": "Streamer", "duration": 0, "thumbnail": ""}) as info:
+        result = invoke(active)
+    info.assert_called_once_with(url)
+    assert result["id"] == job["id"] and media._PREVIEWS[url]["is_live"]
+
+
+def reuses_matching_recording_without_creator_selection():
+    active_job = dict(job, uploader="Streamer")
+    active = type("Active", (), {"job": active_job})()
+    result = invoke(None, "", [active])
+    assert result["id"] == job["id"] and result["kind"] == "live"
 
 
 def requires_creator():
@@ -114,6 +132,8 @@ def publishes_live_progress():
 
 check("pasted live link reuses the creator's active recording", reuses_active)
 check("pasted live link starts the creator recorder", starts_live_recording)
+check("stale preview refreshes when a scheduled stream goes live", refreshes_stale_live_preview)
+check("all videos reuses a matching live recording without creator selection", reuses_matching_recording_without_creator_selection)
 check("live link without a creator explains how to proceed", requires_creator)
 check("stopping a recording makes a final AI check", checks_final_window_after_stop)
 check("Twitch and Kick live channel links are accepted", accepts_twitch_and_kick)

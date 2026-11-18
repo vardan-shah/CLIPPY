@@ -198,11 +198,11 @@ def _caption_words(data: dict) -> list:
 _PREVIEWS: dict = {}
 
 
-def preview(url: str) -> dict:
+def preview(url: str, refresh=False) -> dict:
     """What the user will get from a link, checked before any work starts. The thumbnail comes back inline
     (the page may only load images from this site). Cached, so retyping a link costs nothing."""
     url = clean_url(url)
-    if url in _PREVIEWS:
+    if not refresh and url in _PREVIEWS:
         return _PREVIEWS[url]
     i = info(url)
     if i["kind"] != "video" or not i["title"]:
