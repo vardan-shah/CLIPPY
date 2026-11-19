@@ -48,6 +48,10 @@ if ! .venv/bin/python -c 'from studio.transcribe import model_ready; raise Syste
 fi
 
 APP_URL="$(.venv/bin/python -c 'from studio import config; print(f"http://127.0.0.1:{config.PORT}")')"
+if curl -fsS "$APP_URL/healthz" >/dev/null 2>&1; then
+  open "$APP_URL/app"
+  exit 0
+fi
 (
   for i in {1..60}; do
     if curl -fsS "$APP_URL/healthz" >/dev/null 2>&1; then

@@ -251,7 +251,8 @@ def live_now(platform: str, url: str) -> dict:
             pass
         return {"live": True, "viewers": ls.get("viewer_count"), "title": ls.get("session_title") or "", "started": started, "embed": slug}
     if platform == "YouTube":
-        base = re.sub(r"/(live|videos|streams|featured)$", "", url)
+        base = urlparse(url)._replace(query="", fragment="").geturl().rstrip("/")
+        base = re.sub(r"/(live|videos|streams|featured)$", "", base)
         _, raw = _get(base + "/live")
         html = raw.decode("utf-8", "replace")
         if '"isLiveNow":true' not in html:

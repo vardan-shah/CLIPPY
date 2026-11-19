@@ -3,6 +3,7 @@ import os
 import shutil
 import sys
 import tempfile
+from unittest.mock import patch
 
 os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="clippy-profiles-")
 os.environ["DATABASE_URL"] = ""
@@ -43,6 +44,13 @@ profiles._ydl_info = lambda url: {
 video = profiles.fetch("https://www.youtube.com/live/Kush1FqnhbU?si=example")
 check("YouTube live archive resolves to its creator", video["name"] == "Video Creator")
 check("video links resolve to a reusable creator channel", video["channel_url"] == "https://www.youtube.com/@video-creator")
+
+requested = []
+with (patch.object(profiles, "_get", side_effect=lambda url, *args, **kwargs: (
+        requested.append(url) or ("text/html", b'"isLiveNow":true'))),
+      patch.object(profiles, "_ydl_info", return_value={"id": "stream123456", "is_live": True, "title": "Live"})):
+    live = profiles.live_now("YouTube", "https://youtube.com/@creator?si=share-token#details")
+check("YouTube live checks remove sharing query and fragment", live["live"] and requested == ["https://youtube.com/@creator/live"])
 
 shutil.rmtree(os.environ["PEAKCUT_DATA"], ignore_errors=True)
 sys.exit(1 if failed else 0)
