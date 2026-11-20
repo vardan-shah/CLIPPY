@@ -29,6 +29,11 @@ def delete_clip(jid: str, cid: str) -> bool:
         return False
     if clip.get("status") in ("queued", "rendering"):
         raise Busy("This clip is still being made. Wait for it to finish first.")
+    if job.get("kind") == "live" and clip.get("end", 0) > clip.get("start", 0):
+        now = time.time()
+        job["deleted_ranges"] = [r for r in job.get("deleted_ranges", [])
+                                 if 0 <= now - r.get("deleted_at", 0) < 3600][-99:]
+        job["deleted_ranges"].append({"start": clip["start"], "end": clip["end"], "deleted_at": now})
     job["clips"] = [c for c in job["clips"] if c["id"] != cid]
     jobs.save(job)
     d = Path(job["dir"])

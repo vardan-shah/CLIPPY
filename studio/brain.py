@@ -59,7 +59,11 @@ Rules:
   complete sentence: never in the middle of a sentence or a thought. The clip must make sense on its own.
 - Do not pick intros, sponsor reads, "like and subscribe", or dead air.
 - Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping.
-- score: 0-100, how likely a stranger keeps watching. Be honest; most clips are 50-80.
+- score: rate the moment, not your confidence, title, or game. Add these four parts: standalone clarity (0-25),
+  payoff or novelty (0-30), tension or emotion (0-25), and short-form hook/shareability (0-20).
+  Use the sum. 90-100 is exceptional and instantly clear; 80-89 is strongly shareable; 70-79 is good but
+  less distinctive; 60-69 is merely watchable; below 60 is weak and should usually be omitted. Do not reuse
+  a default score: moments with different evidence should receive different totals.
 - hook: at most 5 words, ALL CAPS, shown as big text on the video. Curiosity, but true to what happens.
 - title: at most 70 characters, for the post.
 - description: one or two sentences.
@@ -206,19 +210,21 @@ def ask_ai(prompt, schema=None, purpose="AI call", timeout=None):
     raise RuntimeError(f"The AI did not answer: {ai.explain(last) or last}")
 
 
-def sentence_ends(words) -> list:
+def sentence_ends(words, partial=False) -> list:
     """The moments a sentence finishes. In our own transcript that is a word ending in . ? or !; YouTube's
-    transcript has no punctuation, so there it is a pause in the talking."""
+    transcript has no punctuation, so there it is a pause in the talking. Live transcripts are open at the end."""
     punctuated = sum(1 for w in words if w["w"][-1:] in ".?!\u0964\u061f") >= max(2, len(words) // 80)
     out = []
     for i, w in enumerate(words):
+        if partial and i == len(words) - 1:
+            continue
         gap = (words[i + 1]["s"] - w["e"]) if i + 1 < len(words) else 9.0
-        if (punctuated and w["w"][-1:] in ".?!\u0964\u061f") or gap >= (1.0 if punctuated else 0.5):
+        if (punctuated and w["w"][-1:] in ".?!\u0964\u061f") or (i + 1 < len(words) and gap >= (1.0 if punctuated else 0.8)):
             out.append(w["e"])
-    return out
+    return out + ([words[-1]["e"]] if words and not partial else [])
 
 
-def _snap(clip, lines, words, min_len, max_len, duration):
+def _snap(clip, lines, words, min_len, max_len, duration, partial=False):
     """Start at the beginning of a line and end where a sentence ends, inside the allowed length. A clip that stops
     in the middle of a sentence feels cut off, so the sentence being said at the chosen end is finished; if that
     would take too long, the clip ends at the sentence before."""
@@ -228,21 +234,20 @@ def _snap(clip, lines, words, min_len, max_len, duration):
     starts = [l["s"] for l in lines if abs(l["s"] - s) <= 4]
     if starts:
         s = min(starts, key=lambda x: abs(x - s))
-    lo, hi = s + min_len, min(s + max_len, duration)
-    stops = [x for x in sentence_ends(words) if lo <= x <= hi]
+    clip_start = max(0.0, s - 0.15)
+    lo, hi = s + min_len, min(clip_start + max_len, duration)
+    stops = [x for x in sentence_ends(words, partial) if lo <= x <= hi]
     if stops:
         after = [x for x in stops if x >= e - 1.0]
-        e = after[0] if after and after[0] - e <= 12 else min(stops, key=lambda x: abs(x - e))
-    else:                        # no sentence ends in reach (one long unbroken stretch): at least end on a whole word
-        ends = [w["e"] for w in words if lo <= w["e"] <= hi and abs(w["e"] - e) <= 4]
-        if ends:
-            e = min(ends, key=lambda x: abs(x - e))
-    e = max(e, s + min_len)
-    e = min(e, s + max_len, duration)
+        e = after[0] if after else stops[-1]
+    else:                        # if no complete sentence fits, skip it rather than cut off the dialogue
+        return 0.0, 0.0
+    e = min(max(e, s + min_len), s + max_len, duration)
     # a short breath after the last word, but never into the next sentence
     nxt = next((w["s"] for w in words if w["s"] > e - 0.01), None)
     tail = 0.35 if nxt is None else min(0.35, max(0.08, nxt - e - 0.05))
-    return round(max(0.0, s - 0.15), 2), round(min(duration, e + tail), 2)
+    tail = max(0.0, min(tail, clip_start + max_len - e))
+    return round(clip_start, 2), round(min(duration, e + tail), 2)
 
 
 def fallback_by_loudness(db, words, n, max_len, duration, min_len=15):
@@ -362,7 +367,7 @@ def find_live_clips(words, z, now, chat=None, title="", uploader="", min_len=15,
     out, _model, spent = ask_ai(prompt, purpose="Live check")
     clips = []
     for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
-        s, e = _snap(c, lines, words, min_len, max_len, now)
+        s, e = _snap(c, lines, words, min_len, max_len, now, partial=True)
         if e - s < min_len - 1 or _overlaps(s, e, list(existing) + clips):
             continue
         clips.append(_tidy(c, s, e, game))
@@ -453,6 +458,8 @@ Each line is a 2-second slice: [seconds] L=how much louder than usual the stream
 
 Find moments where something clearly happened: a sudden jump in loudness (shouting, screaming, laughing),
 {chat_hint}a stretch that stays well above normal. Ignore steady background noise or music that is loud the whole time.
+Score relative to this stream: 90-100 is an exceptional reaction spike, 70-89 is clearly stronger than usual,
+50-69 is noticeable but moderate, and below 50 is ordinary. Use the evidence in each moment; do not reuse a score.
 Return up to 3 moments with start and end (seconds), score 0-100 for how strong the reaction is, and a short reason.
 Return [] if nothing stands out. Most stretches have nothing.
 
@@ -480,7 +487,7 @@ def judge_transcript(words, start, now, title="", uploader="", min_len=15, max_l
     out, _model, spent = ask_ai(prompt, purpose="Live: words judge", timeout=timeout)
     clips = []
     for c in sorted((c for c in out if isinstance(c, dict)), key=lambda c: -_num(c.get("score"))):
-        s, e = _snap(c, lines, words, min_len, max_len, now)
+        s, e = _snap(c, lines, words, min_len, max_len, now, partial=True)
         if e - s < min_len - 1 or _overlaps(s, e, list(existing) + clips):
             continue
         clips.append(_tidy(c, s, e, game))

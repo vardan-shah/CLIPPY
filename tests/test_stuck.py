@@ -106,6 +106,20 @@ w2 = talk(sents, pause=0.9, punct=False)          # YouTube's transcript: no pun
 ends2 = brain.sentence_ends(w2)
 s, e = brain._snap({"start": 0.0, "end": 14.0}, brain.make_lines(w2), w2, 5, 60, 40)
 check("without punctuation, a pause counts as the end of a sentence", any(abs(e - x) < 0.5 for x in ends2) and len(ends2) == 6)
+live_words = talk(["the first complete line is finished", "this next line is still being spoken"], pause=0.9)
+live_ends = brain.sentence_ends(live_words, partial=True)
+check("an open live transcript does not treat its last word as a sentence end", live_words[-1]["e"] not in live_ends)
+s, e = brain._snap({"start": 0.0, "end": live_words[-1]["e"]}, brain.make_lines(live_words), live_words,
+                   2, 60, live_words[-1]["e"] + 1, partial=True)
+check("a live clip waits for the last complete line", e < live_words[-1]["e"])
+long_words = talk(["one two three four five six", " ".join(["and"] * 30)])
+s, e = brain._snap({"start": 0.0, "end": 4.0}, brain.make_lines(long_words), long_words, 1, 60, 30)
+check("a complete line can extend more than 12 seconds when it still fits", e >= long_words[-1]["e"])
+long_video = talk([" ".join(["word"] * 20) for _ in range(12)])
+s, e = brain._snap({"start": 0.0, "end": 55.0}, brain.make_lines(long_video), long_video, 15, 60, 120)
+bounded = [{"w": "finished.", "s": 0.15, "e": 60.0}]
+s2, e2 = brain._snap({"start": 0.15, "end": 59.0}, [{"s": 0.15, "e": 60.0}], bounded, 15, 60, 120)
+check("sentence padding never takes a clip over its 60-second limit", e2 - s2 <= 60)
 import numpy as np
 db = np.zeros(30); db[13] = 9.0
 brain.ask_ai = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("The AI is not set up on this server."))
